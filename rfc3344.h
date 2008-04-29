@@ -83,4 +83,6 @@ struct mip_reg_reply {
 	struct mip_ext_auth auth;
 } __attribute__((packed));
 
+unsigned long long time_stamp();
+
 #endif

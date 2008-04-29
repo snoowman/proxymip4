@@ -17,6 +17,6 @@ clean:
 
 %.o: %.c
 	$(COMPILE.c) $*.c -o $*.o
-	$(CC) -MM $(CFLAGS) $*.c -o $*.d
+	@$(CC) -MM $(CFLAGS) $*.c -o $*.d
 
 .PHONY: clean

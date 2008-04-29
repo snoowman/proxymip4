@@ -17,10 +17,10 @@ char *progname;
 
 static void usage()
 {
-	fprintf(stderr, "Usage: %s -a <hoa> -c <coa> -m <ha>\n\
-  -a   register home address 'hoa'\n\
+	fprintf(stderr, "Usage: %s -m <hoa> -c <coa> -m <ha>\n\
+  -m   register home address 'hoa'\n\
   -c   using care-of address 'coa'\n\
-  -m   register with home agent 'ha'\n", 
+  -h   register with home agent 'ha'\n", 
  		progname);
 	exit(-1);
 }
@@ -36,6 +36,7 @@ void create_reg_request(struct mip_reg_request *req, in_addr_t hoa, in_addr_t ha
 	req->hoa = hoa;
 	req->ha = ha;
 	req->coa = coa;
+	req->id = time_stamp();
 
 	req->auth.type = MIPEXT_AUTH_TYPE;
 	req->auth.spi = htonl(1);
@@ -52,13 +53,13 @@ int main(int argc, char** argv)
 	if ((p = strrchr(progname, '/')) != NULL)
 		progname = p + 1;
 
-	while ((c = getopt(argc, argv, "a:m:c:")) != -1) {
+	while ((c = getopt(argc, argv, "h:m:c:")) != -1) {
 		switch (c) {
-		case 'a':
-			hoa = optarg;
+		case 'h':
+			ha = optarg;
 			break;
 		case 'm':
-			ha = optarg;
+			hoa = optarg;
 			break;
 		case 'c':
 			coa = optarg;

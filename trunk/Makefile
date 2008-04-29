@@ -1,35 +1,22 @@
-CFLAGS=-Wall
+CFLAGS  = -Wall
+PROGS   = rtsol rtadv ha pma mipsa
+OBJS    = $(PROGS:=.o) common.o sadb.o
 
-all: rtsol rtadv ha pma
+all: $(PROGS)
 
-ha: ha.o common.o
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
-
-ha.o: ha.c common.h
-	$(CC) $(CFLAGS) -c -o $@ $<
-
-pma: pma.o common.o
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
-
-pma.o: pma.c common.h
-	$(CC) $(CFLAGS) -c -o $@ $<
+-include $(OBJS:.o=.d)
 
 rtsol: rtsol.o common.o
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
-
-rtsol.o: rtsol.c common.h
-	$(CC) $(CFLAGS) -c -o $@ $<
-
 rtadv: rtadv.o common.o
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
-
-rtadv.o: rtadv.c common.h
-	$(CC) $(CFLAGS) -c -o $@ $<
-
-common.o: common.c common.h
-	$(CC) $(CFLAGS) -c -o $@ $<
+ha: ha.o common.o
+pma: pma.o common.o
+mipsa: mipsa.o common.o sadb.o
 
 clean:
-	rm *.o rtsol rtadv ha pma || true
+	rm *.o *.d $(PROGS) || true
+
+%.o: %.c
+	$(COMPILE.c) $*.c -o $*.o
+	$(CC) -MM $(CFLAGS) $*.c -o $*.d
 
 .PHONY: clean

@@ -18,27 +18,27 @@ char *progname;
 
 static void usage()
 {
-	fprintf(stderr, "Usage: %s -m <hoa> -c <coa> -m <ha> -s <spi>\n\
+	fprintf(stderr, "Usage: %s -m <hoa> -c <coa> -m <ha> -s <spi> -l <life>\n\
   -m   register home address 'hoa'\n\
   -c   using care-of address 'coa'\n\
   -h   register with home agent 'ha'\n\
+  -l   lifetime, default to 0xfffe\n\
   -s   spi index for regstration\n",
  		progname);
 	exit(-1);
 }
 
-void create_reg_request(struct mip_reg_request *req, in_addr_t hoa, in_addr_t ha, in_addr_t coa, struct mipsa *sa)
+void create_reg_request(struct mip_reg_request *req, struct sockaddr_in *hoa, struct sockaddr_in *ha, struct sockaddr_in *coa, struct mipsa *sa, __u16 lifetime)
 {
 	bzero(req, sizeof(*req));
 	req->type = MIP_REQUEST_TYPE;
-	req->flag_D = 1;
 	req->flag_T = 1;
-	req->lifetime = htons(0xfffe);
+	req->lifetime = htons(lifetime);
 
-	req->hoa = hoa;
-	req->ha = ha;
-	req->coa = coa;
-	req->id = id_by_sa(sa);
+	req->hoa = hoa->sin_addr.s_addr;
+	req->ha = ha->sin_addr.s_addr;
+	req->coa = coa->sin_addr.s_addr;
+	req->id = htonll(id_by_sa(sa));
 
 	req->auth.type = MIPEXT_AUTH_TYPE;
 	req->auth.spi = htonl(sa->spi);
@@ -54,12 +54,13 @@ int main(int argc, char** argv)
 	char *ha = NULL;
 	char *coa = NULL;
 	__u32 spi = 0;
+	__u16 lifetime = 0xfffe;
 
 	progname = argv[0];
 	if ((p = strrchr(progname, '/')) != NULL)
 		progname = p + 1;
 
-	while ((c = getopt(argc, argv, "h:m:c:s:")) != -1) {
+	while ((c = getopt(argc, argv, "h:m:c:s:l:")) != -1) {
 		switch (c) {
 		case 'h':
 			ha = optarg;
@@ -69,6 +70,12 @@ int main(int argc, char** argv)
 			break;
 		case 'c':
 			coa = optarg;
+			break;
+		case 'l':
+			if (sscanf(optarg, "%hu%c", &lifetime, &tmp) != 1) {
+				fprintf(stderr, "bad lifetime value %s\n", optarg);
+				exit(-1);
+			}
 			break;
 		case 's':
 			if (sscanf(optarg, "%u%c", &spi, &tmp) != 1) {
@@ -148,8 +155,9 @@ int main(int argc, char** argv)
 	}
 	printf("hoa: %08x\n", sa_hoa.sin_addr.s_addr);
 
+	randomize();
 	struct mip_reg_request req;
-	create_reg_request(&req, sa_hoa.sin_addr.s_addr, sa_ha.sin_addr.s_addr, sa_coa.sin_addr.s_addr, sa);
+	create_reg_request(&req, &sa_hoa, &sa_ha, &sa_coa, sa, lifetime);
 
 	if (send(sock, &req, MIP_MSG_SIZE2(req), 0) == -1) {
 		perror("send");

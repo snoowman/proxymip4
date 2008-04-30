@@ -1,6 +1,6 @@
 CFLAGS  = -Wall
 PROGS   = rtsol rtadv ha pma mipsa
-OBJS    = $(PROGS:=.o) common.o sadb.o
+OBJS    = $(PROGS:=.o) common.o sadb.o bcache.o
 
 all: $(PROGS)
 
@@ -8,7 +8,7 @@ all: $(PROGS)
 
 rtsol: rtsol.o common.o
 rtadv: rtadv.o common.o
-ha: ha.o common.o sadb.o
+ha: ha.o common.o sadb.o bcache.o
 pma: pma.o common.o sadb.o
 mipsa: mipsa.o common.o sadb.o
 

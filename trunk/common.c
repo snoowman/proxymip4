@@ -204,7 +204,7 @@ __u64 time_stamp()
 	ret |= (__u64)tv.tv_usec << 12;
 	ret |= (__u64)tv.tv_sec << 32;
 
-	return htonll(ret);
+	return ret;
 }
 
 __u64 nonce()

@@ -6,9 +6,9 @@
 unsigned short in_cksum(void *addr, int len);
 void randomize();
 void sock_bind_if(int sock, char *ifname);
-void sock_join_mcast(int sock, unsigned long mcast);
+void sock_join_mcast(int sock, in_addr_t mcast);
 void sock_set_icmpfilter(int sock, int type);
-unsigned long sock_get_if_addr(int sock, char* ifname);
+in_addr_t sock_get_if_addr(int sock, char* ifname);
 int sock_get_if_prefix(int sock, char* ifname);
 int popen2(char **cmd, int *rfd, int *wfd);
 unsigned long long ntohll(unsigned long long ll);

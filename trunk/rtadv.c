@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <asm/types.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -18,8 +19,8 @@ int MaxAdvertisementInterval = DEFAULT_MAX_ADVERTISEMENT_INTERVAL;
 int MinAdvertisementInterval = 0;
 int AdvertisementLifetime    = 0;
 
-static int create_rtadv_msg(void* buf, int size, unsigned long addr, int prefix);
-static void set_seq(void* buf, int size, unsigned short seq);
+static int create_rtadv_msg(void* buf, int size, in_addr_t addr, int prefix);
+static void set_seq(void* buf, int size, __u16 seq);
 static void send_rtadv(int sock_icmp, char* ifname, int broadcast);
 static void recv_rtsol(int sock_icmp, char* buf, int len, int delay_us);
 
@@ -120,7 +121,7 @@ AdvertisementLifetime %d\n", MaxAdvertisementInterval, MinAdvertisementInterval,
 	return 0;
 }
 
-int create_rtadv_msg(void *buf, ssize_t size, unsigned long addr, int prefix)
+int create_rtadv_msg(void *buf, ssize_t size, in_addr_t addr, int prefix)
 {
 	// NOTICE: does not verify size
 
@@ -152,7 +153,7 @@ int create_rtadv_msg(void *buf, ssize_t size, unsigned long addr, int prefix)
 	ext2->type = RA_PREFIX_LENGTHS_EXTENTION_TYPE;
 	ext2->length = 1;
 	
-	unsigned char* pprefix = buf + 26;
+	__u8* pprefix = buf + 26;
 	*pprefix = prefix;
 
 	icmp->icmp_cksum = in_cksum(icmp, rtadv_len);
@@ -160,7 +161,7 @@ int create_rtadv_msg(void *buf, ssize_t size, unsigned long addr, int prefix)
 	return rtadv_len;
 }
 
-void set_seq(void *buf, ssize_t size, unsigned short seq)
+void set_seq(void *buf, ssize_t size, __u16 seq)
 {
 	// NOTICE: does not verify size
 	ssize_t rtadv_len = 8 + 8 + 8 + 3 + 1; /* ICMP header + 1 address + mipext */;
@@ -186,7 +187,7 @@ void send_rtadv(int sock_icmp, char* ifname, int broadcast)
 	sock_set_icmpfilter(sock_icmp, ICMP_ROUTER_SOLICITATION); 
 	sock_join_mcast(sock_icmp, INADDR_ALLRTRS_GROUP);
 
-	unsigned long addr = sock_get_if_addr(sock_icmp, ifname);
+	in_addr_t addr = sock_get_if_addr(sock_icmp, ifname);
 	int prefix = sock_get_if_prefix(sock_icmp, ifname);
 
 	char buf[1500];

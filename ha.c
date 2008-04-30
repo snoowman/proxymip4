@@ -1,8 +1,11 @@
 #include <unistd.h>
 #include <getopt.h>
+#include <math.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/time.h>
@@ -13,6 +16,7 @@
 #include "rfc1256.h"
 #include "rfc3344.h"
 #include "sadb.h"
+#include "bcache.h"
 
 char *progname;
 
@@ -22,6 +26,11 @@ static void usage()
   -i   start mobile home agent on link 'iface'\n", 
  		progname);
 	exit(-1);
+}
+
+static void sigusr1(int signo)
+{
+	list_binding();
 }
 
 int verify_request(struct mip_reg_request *req, int plen, in_addr_t ha)
@@ -57,8 +66,48 @@ int verify_request(struct mip_reg_request *req, int plen, in_addr_t ha)
 		fprintf(stderr, "mobile node failed authentication\n");
 		return MIPCODE_BAD_AUTH;
 	}
+
+	__u64 id = ntohll(req->id);
+	__u64 t1 = id >> 32;
+	__u64 t2 = time_stamp() >> 32;
+
+	if (abs(t1 - t2) > sa->delay) {
+		fprintf(stderr, "time not synchronized\n");
+
+		// reset req id to home agent's time
+		id &= (1llu << 32) - 1;
+		id |= t2 << 32;
+		req->id = htonll(id);
+		return MIPCODE_BAD_ID;
+	}
+
+	struct binding *b = find_binding(req->hoa);
+	if (b) {
+		if (id <= b->lastid) {
+			fprintf(stderr, "identifier smaller than previous one\n");
+			return MIPCODE_BAD_ID;
+		}
+	}
+	else if (req->lifetime) {
+		b = malloc(sizeof(struct binding));
+		b->hoa = req->hoa;
+		b->ha = req->ha;
+		b->coa = req->coa;
+
+		add_binding(b);
+	}
+
+	if (req->lifetime == 0 && b) {
+		remove_binding(b);
+		return MIPCODE_ACCEPT;
+	}
+
+	b->lastid = id;
+	if (req->lifetime == 0xffff)
+		b->timeout = 0;
+	else
+		b->timeout = time(NULL) + ntohs(req->lifetime);
 	
-	// TODO: check hoa, id
 	return MIPCODE_ACCEPT;
 }
 
@@ -129,6 +178,7 @@ int main(int argc, char** argv)
 	printf("ha %08x\n", ha);
 
 	load_sadb();
+	signal(SIGUSR1, sigusr1);
 
 	for(;;) {
 		struct mip_reg_request req;

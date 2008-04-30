@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include "common.h"
 #include "sadb.h"
 
 #define MIPSADB_CONF "/etc/mip_sadb.conf"
@@ -185,3 +187,34 @@ int scan_sa(FILE *fp, struct mipsa *sa)
 		sa->replay = MIPSA_REPLAY_TIMESTAMP;
 	return 0;
 }
+
+int auth_by_sa(char *auth, void *buf, ssize_t len, struct mipsa *sa)
+{
+	char *cmd[] = {"/usr/bin/openssl", sa->hmac,  "-binary", NULL};;
+	int rfd, wfd;
+	popen2(cmd, &rfd, &wfd);
+	write(wfd, sa->secret, strlen(sa->secret));
+	write(wfd, buf, len);
+	close(wfd);
+	int ret = read(rfd, auth, MIP_AUTH_MAX);
+	close(rfd);
+	return ret;
+}
+
+int verify_by_sa(char *old_auth, void *buf, ssize_t len, struct mipsa *sa)
+{
+	char auth[MIP_AUTH_MAX];
+	int authlen = auth_by_sa(auth, buf, len, sa);
+	if (memcmp(auth, old_auth, authlen - 4) == 0)
+		return 1;
+	return 0;
+}
+
+ssize_t authlen_by_sa(struct mipsa *sa)
+{
+	char auth[MIP_AUTH_MAX];
+	int c = 0;
+	ssize_t ret = auth_by_sa(auth, &c, sizeof(c), sa);
+	return ret + 4;
+}
+

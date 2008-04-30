@@ -12,20 +12,22 @@
 #include "common.h"
 #include "rfc1256.h"
 #include "rfc3344.h"
+#include "sadb.h"
 
 char *progname;
 
 static void usage()
 {
-	fprintf(stderr, "Usage: %s -m <hoa> -c <coa> -m <ha>\n\
+	fprintf(stderr, "Usage: %s -m <hoa> -c <coa> -m <ha> -s <spi>\n\
   -m   register home address 'hoa'\n\
   -c   using care-of address 'coa'\n\
-  -h   register with home agent 'ha'\n", 
+  -h   register with home agent 'ha'\n\
+  -s   spi index for regstration\n",
  		progname);
 	exit(-1);
 }
 
-void create_reg_request(struct mip_reg_request *req, in_addr_t hoa, in_addr_t ha, in_addr_t coa)
+void create_reg_request(struct mip_reg_request *req, in_addr_t hoa, in_addr_t ha, in_addr_t coa, struct mipsa *sa)
 {
 	bzero(req, sizeof(*req));
 	req->type = MIP_REQUEST_TYPE;
@@ -39,21 +41,25 @@ void create_reg_request(struct mip_reg_request *req, in_addr_t hoa, in_addr_t ha
 	req->id = time_stamp();
 
 	req->auth.type = MIPEXT_AUTH_TYPE;
-	req->auth.spi = htonl(1);
+	req->auth.spi = htonl(sa->spi);
+
+	req->auth.length = authlen_by_sa(sa);
+	auth_by_sa(req->auth.auth, req, MIP_MSG_SIZE1(*req), sa);
 }
 
 int main(int argc, char** argv)
 {
-	char *p, c;
+	char *p, c, tmp;
 	char *hoa = NULL;
 	char *ha = NULL;
 	char *coa = NULL;
+	unsigned long spi = 0;
 
 	progname = argv[0];
 	if ((p = strrchr(progname, '/')) != NULL)
 		progname = p + 1;
 
-	while ((c = getopt(argc, argv, "h:m:c:")) != -1) {
+	while ((c = getopt(argc, argv, "h:m:c:s:")) != -1) {
 		switch (c) {
 		case 'h':
 			ha = optarg;
@@ -63,6 +69,12 @@ int main(int argc, char** argv)
 			break;
 		case 'c':
 			coa = optarg;
+			break;
+		case 's':
+			if (sscanf(optarg, "%lu%c", &spi, &tmp) != 1) {
+				fprintf(stderr, "bad spi value %s\n", optarg);
+				exit(-1);
+			}
 			break;
 		default:
 			usage();
@@ -80,6 +92,19 @@ int main(int argc, char** argv)
 
 	if (coa == NULL || strlen(coa) == 0)
 		usage();
+	
+	if (spi < 256) {
+		fprintf(stderr, "error, no spi specified or spi value below 256\n");
+		exit(-1);
+	}
+
+	load_sadb();
+	struct mipsa *sa = find_sa(spi);
+
+	if (!sa) {
+		fprintf(stderr, "error, no sa with specified spi %lu exists\n", spi);
+		exit(-1);
+	}
 
 	int sock = socket(PF_INET, SOCK_DGRAM, 0);
 	if (sock == -1) {
@@ -124,11 +149,8 @@ int main(int argc, char** argv)
 	printf("hoa: %08x\n", sa_hoa.sin_addr.s_addr);
 
 	struct mip_reg_request req;
-	create_reg_request(&req, sa_hoa.sin_addr.s_addr, sa_ha.sin_addr.s_addr, sa_coa.sin_addr.s_addr);
-	req.auth.length = authlen_by_spi(&req);
-	auth_by_spi(req.auth.auth, &req);
+	create_reg_request(&req, sa_hoa.sin_addr.s_addr, sa_ha.sin_addr.s_addr, sa_coa.sin_addr.s_addr, sa);
 
-	printf("size %d, size2 %d, size req %d\n", MIP_MSG_SIZE1(req), MIP_MSG_SIZE2(req), sizeof(req));
 	if (send(sock, &req, MIP_MSG_SIZE2(req), 0) == -1) {
 		perror("send");
 		exit(-1);

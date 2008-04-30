@@ -11,10 +11,9 @@ void sock_set_icmpfilter(int sock, int type);
 unsigned long sock_get_if_addr(int sock, char* ifname);
 int sock_get_if_prefix(int sock, char* ifname);
 int popen2(char **cmd, int *rfd, int *wfd);
-ssize_t authlen_by_spi(struct mip_reg_request *req);
-int auth_by_spi(char *auth, struct mip_reg_request *req);
 unsigned long long ntohll(unsigned long long ll);
 #define htonll ntohll
+void print_hex(char *buf, int len);
 
 #define ICMP_FILTER                     1
 struct icmp_filter {

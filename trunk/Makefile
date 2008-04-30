@@ -8,8 +8,8 @@ all: $(PROGS)
 
 rtsol: rtsol.o common.o
 rtadv: rtadv.o common.o
-ha: ha.o common.o
-pma: pma.o common.o
+ha: ha.o common.o sadb.o
+pma: pma.o common.o sadb.o
 mipsa: mipsa.o common.o sadb.o
 
 clean:

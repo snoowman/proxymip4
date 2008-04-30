@@ -15,9 +15,10 @@
 #define MIP_MSG_SIZE1(req) (sizeof((req)) - MIP_AUTH_MAX)
 #define MIP_MSG_SIZE2(req) (sizeof((req)) - MIP_AUTH_MAX + (req).auth.length - 4)
 
-#define MIPE_BAD_AUTH   131
-#define MIPE_BAD_FORMAT 134
-#define MIPE_BAD_HA     136
+#define MIPCODE_ACCEPT     0 
+#define MIPCODE_BAD_AUTH   131
+#define MIPCODE_BAD_FORMAT 134
+#define MIPCODE_BAD_HA     136
 
 struct ra_ext_hdr {
 	unsigned char type;

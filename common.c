@@ -174,34 +174,6 @@ int popen2(char **cmd, int *rfd, int *wfd)
 	return 0;
 }
 
-int auth_by_spi(char *auth, struct mip_reg_request *req)
-{
-	char *cmd[] = {"/usr/bin/openssl", "md5",  "-binary", NULL};;
-	int rfd, wfd;
-	popen2(cmd, &rfd, &wfd);
-	write(wfd, &(req->auth.spi), sizeof(req->auth.spi));
-	write(wfd, req, MIP_MSG_SIZE1(*req));
-	close(wfd);
-	read(rfd, auth, MIP_AUTH_MAX);
-	close(rfd);
-	return 0;
-}
-
-ssize_t authlen_by_spi(struct mip_reg_request *req)
-{
-	char auth[MIP_AUTH_MAX];
-	char *cmd[] = {"/usr/bin/openssl", "md5",  "-binary", NULL};;
-	int rfd, wfd;
-	popen2(cmd, &rfd, &wfd);
-
-	char c = 0;
-	write(wfd, &c, 1);
-	close(wfd);
-	ssize_t ret = read(rfd, auth, MIP_AUTH_MAX);
-	close(rfd);
-	return 4 + ret;
-}
-
 unsigned long long ntohll(unsigned long long ll)
 {
 	unsigned long* s = (unsigned long*)&ll;
@@ -233,4 +205,12 @@ unsigned long long time_stamp()
 	ret |= (unsigned long long)tv.tv_sec << 32;
 
 	return htonll(ret);
+}
+
+void print_hex(char *buf, int len)
+{
+	int i;
+	for (i = 0; i < len; ++i)
+		printf("%02hhx ", buf[i]);
+	printf("\n");
 }

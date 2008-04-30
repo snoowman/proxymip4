@@ -11,6 +11,7 @@
 #include "common.h"
 #include "rfc1256.h"
 #include "rfc3344.h"
+#include "sadb.h"
 
 char *progname;
 
@@ -24,38 +25,40 @@ static void usage()
 
 int verify_request(struct mip_reg_request *req, int plen, unsigned long ha)
 {
-	int errcode = 0;
 	if (req->type != MIP_REQUEST_TYPE) {
 		fprintf(stderr, "incorrect MIP type value %d\n", req->type);
-		errcode = MIPE_BAD_FORMAT;
+		return MIPCODE_BAD_FORMAT;
 	}
 
 	if (plen != MIP_MSG_SIZE2(*req)) {
 		fprintf(stderr, "incorrect packet length %d\n", plen);
-		errcode = MIPE_BAD_FORMAT;
+		return MIPCODE_BAD_FORMAT;
 	}
 
 	if (req->ha != ha) {
 		fprintf(stderr, "incorrect home agent address %08lx\n", req->ha);
-		errcode = MIPE_BAD_HA;
-		return 0;
+		return MIPCODE_BAD_HA;
 	}
 
-	int authlen = authlen_by_spi(req);
+	struct mipsa *sa = find_sa(ntohl(req->auth.spi));
+	if (!sa) {
+		fprintf(stderr, "incorrect spi %u\n", ntohl(req->auth.spi));
+		return MIPCODE_BAD_AUTH;
+	}
+
+	int authlen = authlen_by_sa(sa);
 	if (authlen != req->auth.length) {
 		fprintf(stderr, "incorrect auth length %d", authlen);
-		errcode = MIPE_BAD_FORMAT;
+		return MIPCODE_BAD_FORMAT;
 	}
 
-	char auth[MIP_AUTH_MAX];
-	auth_by_spi(auth, req);
-	if (memcmp(auth, req->auth.auth, authlen) != 0) {
-		fprintf(stderr, "mobile node faild authentication\n");
-		errcode = MIPE_BAD_AUTH;
+	if (!verify_by_sa(req->auth.auth, req, MIP_MSG_SIZE1(*req), sa)) {
+		fprintf(stderr, "mobile node failed authentication\n");
+		return MIPCODE_BAD_AUTH;
 	}
 	
 	// TODO: check hoa, id
-	return errcode;
+	return MIPCODE_ACCEPT;
 }
 
 void create_reg_reply(struct mip_reg_reply *rep, struct mip_reg_request *req, int errcode)
@@ -68,8 +71,17 @@ void create_reg_reply(struct mip_reg_reply *rep, struct mip_reg_request *req, in
 	rep->ha = req->ha;
 	rep->id = req->id;
 
+	struct mipsa *sa = find_sa(ntohl(req->auth.spi));
+
 	rep->auth.type = MIPEXT_AUTH_TYPE;
-	rep->auth.spi = htonl(1);
+	rep->auth.spi = req->auth.spi;
+	if (sa) {
+		rep->auth.length = authlen_by_sa(sa);
+		auth_by_sa(rep->auth.auth, rep, MIP_MSG_SIZE1(*rep), sa);
+	}
+	else {
+		rep->auth.length = req->auth.length;
+	}
 }
 
 int main(int argc, char** argv)
@@ -114,6 +126,8 @@ int main(int argc, char** argv)
 
 	unsigned long ha = sock_get_if_addr(sock, ifname);
 	printf("ha %08lx\n", ha);
+
+	load_sadb();
 
 	for(;;) {
 		struct mip_reg_request req;

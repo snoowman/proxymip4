@@ -6,6 +6,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <netinet/in.h>
 #include <netinet/ip_icmp.h>
 
 #include "common.h"
@@ -23,7 +24,7 @@ static void usage()
 	exit(-1);
 }
 
-int verify_request(struct mip_reg_request *req, int plen, unsigned long ha)
+int verify_request(struct mip_reg_request *req, int plen, in_addr_t ha)
 {
 	if (req->type != MIP_REQUEST_TYPE) {
 		fprintf(stderr, "incorrect MIP type value %d\n", req->type);
@@ -36,7 +37,7 @@ int verify_request(struct mip_reg_request *req, int plen, unsigned long ha)
 	}
 
 	if (req->ha != ha) {
-		fprintf(stderr, "incorrect home agent address %08lx\n", req->ha);
+		fprintf(stderr, "incorrect home agent address %08x\n", req->ha);
 		return MIPCODE_BAD_HA;
 	}
 
@@ -124,8 +125,8 @@ int main(int argc, char** argv)
 		exit(-1);
 	}
 
-	unsigned long ha = sock_get_if_addr(sock, ifname);
-	printf("ha %08lx\n", ha);
+	in_addr_t ha = sock_get_if_addr(sock, ifname);
+	printf("ha %08x\n", ha);
 
 	load_sadb();
 

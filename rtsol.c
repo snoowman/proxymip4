@@ -197,7 +197,7 @@ void parse_rtadv(void *buf, int len)
 			}
 			struct ra_ext_hdr *ext2 = (void*) ext + sizeof(*ext) + ext->length;
 			if (ext2->type == RA_PREFIX_LENGTHS_EXTENTION_TYPE) {
-				unsigned char *prefix = (void*) ext2 + 2;
+				__u8 *prefix = (void*) ext2 + 2;
 				for (i = 0; i < p->icmp_num_addrs; ++i) {
 					struct in_addr tmp;
 					tmp.s_addr = pa[i].ira_addr;

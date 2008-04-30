@@ -71,7 +71,7 @@ void save_sadb()
 	fclose(fp);
 }
 
-struct mipsa *find_sa(unsigned long spi)
+struct mipsa *find_sa(__u32 spi)
 {
 	struct mipsa *p = sadb;
 	while(p) {
@@ -83,10 +83,10 @@ struct mipsa *find_sa(unsigned long spi)
 }
 
 
-int add_sa(unsigned long spi, char *secret, char *hmac, unsigned int replay, unsigned int delay)
+int add_sa(__u32 spi, char *secret, char *hmac, unsigned int replay, unsigned int delay)
 {
 	if (spi < 256) {
-		fprintf(stderr, "spi (%lu) too small, spi 0-255 are reserved value\n", spi);
+		fprintf(stderr, "spi (%u) too small, spi 0-255 are reserved value\n", spi);
 		exit(-1);
 	}
 
@@ -110,7 +110,7 @@ int add_sa(unsigned long spi, char *secret, char *hmac, unsigned int replay, uns
 	return 0;
 }
 
-int del_sa(unsigned long spi)
+int del_sa(__u32 spi)
 {
 	struct mipsa *p = sadb;
 	struct mipsa *prev = NULL;
@@ -132,7 +132,7 @@ int del_sa(unsigned long spi)
 	return 0;
 }
 
-void list_sa(unsigned long spi)
+void list_sa(__u32 spi)
 {
 	if (spi == 0) {
 		struct mipsa *p = sadb;
@@ -146,7 +146,7 @@ void list_sa(unsigned long spi)
 		if (sa)
 			print_sa(stdout, sa);
 		else
-			printf("no spi (%lu) found in sadb\n", spi);
+			printf("no spi (%u) found in sadb\n", spi);
 	}
 }
 
@@ -160,13 +160,13 @@ void print_sa(FILE *fp, struct mipsa *sa)
 	else
 		replay = "badreplay";
 
-	fprintf(fp, "spi:%lu hmac:%s secret:%s replay:%s delay:%u\n", sa->spi, sa->hmac, sa->secret, replay, sa->delay);
+	fprintf(fp, "spi:%u hmac:%s secret:%s replay:%s delay:%u\n", sa->spi, sa->hmac, sa->secret, replay, sa->delay);
 }
 
 int scan_sa(FILE *fp, struct mipsa *sa)
 {
 	char replay[100];
-	int ret = fscanf(fp, "spi:%lu hmac:%s secret:%s replay:%s delay:%u\n", &sa->spi, sa->hmac, sa->secret, replay, &sa->delay);
+	int ret = fscanf(fp, "spi:%u hmac:%s secret:%s replay:%s delay:%u\n", &sa->spi, sa->hmac, sa->secret, replay, &sa->delay);
 	if (ret == 0 || ret == EOF)
 		return -1;
 	else if (ret != 5) {
@@ -175,7 +175,7 @@ int scan_sa(FILE *fp, struct mipsa *sa)
 	}
 
 	if (sa->spi < 256) {
-		fprintf(stderr, "spi (%lu) too small, spi 0-255 are reserved value\n", sa->spi);
+		fprintf(stderr, "spi (%u) too small, spi 0-255 are reserved value\n", sa->spi);
 		exit(-1);
 	}
 
@@ -216,5 +216,21 @@ ssize_t authlen_by_sa(struct mipsa *sa)
 	int c = 0;
 	ssize_t ret = auth_by_sa(auth, &c, sizeof(c), sa);
 	return ret + 4;
+}
+
+__u64 id_by_sa(struct mipsa *sa)
+{
+	if (sa->replay == MIPSA_REPLAY_NONCE) {
+		return nonce();
+	}
+	else if (sa->replay == MIPSA_REPLAY_TIMESTAMP) {
+		return time_stamp();
+	}
+	return 0ll;
+}
+
+__u64 rep_id_by_sa(__u64 req_id, struct mipsa *sa, in_addr_t hoa)
+{
+	return 0ll;
 }
 

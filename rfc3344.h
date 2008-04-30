@@ -5,6 +5,9 @@
 #ifndef PMIP_RFC3344_H
 #define PMIP_RFC3344_H
 
+#include <asm/types.h>
+#include <netinet/in.h>
+
 #define RA_MOBILITY_AGENT_EXTENTION_TYPE 16
 #define RA_PREFIX_LENGTHS_EXTENTION_TYPE 19
 #define MIP_UDP_PORT 434
@@ -17,73 +20,75 @@
 
 #define MIPCODE_ACCEPT     0 
 #define MIPCODE_BAD_AUTH   131
+#define MIPCODE_BAD_ID     133
 #define MIPCODE_BAD_FORMAT 134
 #define MIPCODE_BAD_HA     136
 
 struct ra_ext_hdr {
-	unsigned char type;
-	unsigned char length;
+	__u8 type;
+	__u8 length;
 };
 
 struct ra_ext_magent_adv {
-	unsigned short sequence;
-	unsigned short lifetime;
+	__u16 sequence;
+	__u16 lifetime;
 	union {
 		struct {
-			unsigned char flag_T:1;
-			unsigned char flag_r:1;
-			unsigned char flag_G:1;
-			unsigned char flag_M:1;
-			unsigned char flag_F:1;
-			unsigned char flag_H:1;
-			unsigned char flag_B:1;
-			unsigned char flag_R:1;
+			__u8 flag_T:1;
+			__u8 flag_r:1;
+			__u8 flag_G:1;
+			__u8 flag_M:1;
+			__u8 flag_F:1;
+			__u8 flag_H:1;
+			__u8 flag_B:1;
+			__u8 flag_R:1;
 		};
-		unsigned char flags;
+		__u8 flags;
 	};
-	unsigned char reserved;
+	__u8 reserved;
 } __attribute__((packed));
 
 struct mip_ext_auth {
-	unsigned char type;
-	unsigned char length;
-	unsigned long spi;
+	__u8 type;
+	__u8 length;
+	__u32 spi;
 	char auth[MIP_AUTH_MAX];
 } __attribute__((packed));
 
 struct mip_reg_request {
-	unsigned char type;
+	__u8 type;
 	union {
 		struct {
-			unsigned char flag_x:1;
-			unsigned char flag_T:1;
-			unsigned char flag_r:1;
-			unsigned char flag_G:1;
-			unsigned char flag_M:1;
-			unsigned char flag_D:1;
-			unsigned char flag_B:1;
-			unsigned char flag_S:1;
+			__u8 flag_x:1;
+			__u8 flag_T:1;
+			__u8 flag_r:1;
+			__u8 flag_G:1;
+			__u8 flag_M:1;
+			__u8 flag_D:1;
+			__u8 flag_B:1;
+			__u8 flag_S:1;
 		};
-		unsigned char flags;
+		__u8 flags;
 	};
-	unsigned short lifetime;
-	unsigned long hoa;
-	unsigned long ha;
-	unsigned long coa;
-	unsigned long long id;
+	__u16 lifetime;
+	in_addr_t hoa;
+	in_addr_t ha;
+	in_addr_t coa;
+	__u64 id;
 	struct mip_ext_auth auth;
 } __attribute__((packed));
 
 struct mip_reg_reply {
-	unsigned char type;
-	unsigned char code;
-	unsigned short lifetime;
-	unsigned long hoa;
-	unsigned long ha;
-	unsigned long long id;
+	__u8 type;
+	__u8 code;
+	__u16 lifetime;
+	in_addr_t hoa;
+	in_addr_t ha;
+	__u64 id;
 	struct mip_ext_auth auth;
 } __attribute__((packed));
 
-unsigned long long time_stamp();
+__u64 time_stamp();
+__u64 nonce();
 
 #endif

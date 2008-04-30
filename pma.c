@@ -38,7 +38,7 @@ void create_reg_request(struct mip_reg_request *req, in_addr_t hoa, in_addr_t ha
 	req->hoa = hoa;
 	req->ha = ha;
 	req->coa = coa;
-	req->id = time_stamp();
+	req->id = id_by_sa(sa);
 
 	req->auth.type = MIPEXT_AUTH_TYPE;
 	req->auth.spi = htonl(sa->spi);
@@ -53,7 +53,7 @@ int main(int argc, char** argv)
 	char *hoa = NULL;
 	char *ha = NULL;
 	char *coa = NULL;
-	unsigned long spi = 0;
+	__u32 spi = 0;
 
 	progname = argv[0];
 	if ((p = strrchr(progname, '/')) != NULL)
@@ -71,7 +71,7 @@ int main(int argc, char** argv)
 			coa = optarg;
 			break;
 		case 's':
-			if (sscanf(optarg, "%lu%c", &spi, &tmp) != 1) {
+			if (sscanf(optarg, "%u%c", &spi, &tmp) != 1) {
 				fprintf(stderr, "bad spi value %s\n", optarg);
 				exit(-1);
 			}
@@ -102,7 +102,7 @@ int main(int argc, char** argv)
 	struct mipsa *sa = find_sa(spi);
 
 	if (!sa) {
-		fprintf(stderr, "error, no sa with specified spi %lu exists\n", spi);
+		fprintf(stderr, "error, no sa with specified spi %u exists\n", spi);
 		exit(-1);
 	}
 

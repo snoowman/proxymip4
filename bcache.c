@@ -1,8 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include "bcache.h"
+#include "network.h"
 
 struct binding *bcache = NULL;
 
@@ -10,7 +12,12 @@ int add_binding(struct binding *b)
 {
 	b->next = bcache;
 	bcache = b;
+
 	// TODO allocate tunnel here
+	char tif[IFNAMSIZ];
+	tunnel_name(tif, IFNAMSIZ, b->coa);
+	create_tunnel(tif, b->ha, b->coa);
+	register_hoa(b->hoa, tif, b->homeif);
 	return 0;
 }
 
@@ -31,8 +38,31 @@ int remove_binding(struct binding *b)
 		bcache = p->next;
 	else
 		prev->next = p->next;
-	free(p);
+
 	// TODO deallocate tunnel here
+	char tif[IFNAMSIZ];
+	tunnel_name(tif, IFNAMSIZ, b->coa);
+	deregister_hoa(b->hoa, tif, b->homeif);
+	release_tunnel(tif);
+
+	free(p);
+	return 0;
+}
+
+int change_binding(struct binding *b, in_addr_t newcoa)
+{
+	char oldtif[IFNAMSIZ];
+	tunnel_name(oldtif, IFNAMSIZ, b->coa);
+	deregister_hoa(b->hoa, oldtif, b->homeif);
+	release_tunnel(oldtif);
+
+	char tif[IFNAMSIZ];
+	tunnel_name(tif, IFNAMSIZ, newcoa);
+	create_tunnel(tif, b->ha, newcoa);
+	register_hoa(b->hoa, tif, b->homeif);
+
+	b->coa = newcoa;
+
 	return 0;
 }
 

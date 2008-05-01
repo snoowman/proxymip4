@@ -6,6 +6,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <netinet/ip_icmp.h>
 
@@ -13,16 +14,18 @@
 #include "rfc1256.h"
 #include "rfc3344.h"
 #include "sadb.h"
+#include "network.h"
 
 char *progname;
 
 static void usage()
 {
-	fprintf(stderr, "Usage: %s -m <hoa> -c <coa> -m <ha> -s <spi> -l <life>\n\
+	fprintf(stderr, "Usage: %s -m <hoa> -c <coa> -h <ha> -s <spi> -i <if> -l <life>\n\
   -m   register home address 'hoa'\n\
   -c   using care-of address 'coa'\n\
   -h   register with home agent 'ha'\n\
   -l   lifetime, default to 0xfffe\n\
+  -i   link 'if' which mn reside\n\
   -s   spi index for regstration\n",
  		progname);
 	exit(-1);
@@ -47,12 +50,55 @@ void create_reg_request(struct mip_reg_request *req, struct sockaddr_in *hoa, st
 	auth_by_sa(req->auth.auth, req, MIP_MSG_SIZE1(*req), sa);
 }
 
+int verify_reply(struct mip_reg_reply *rep, int plen, struct sockaddr_in *hoa)
+{
+	if (rep->type != MIP_REPLY_TYPE) {
+		fprintf(stderr, "incorrect MIP type value %d\n", rep->type);
+		exit(-1);
+	}
+
+	if (plen != MIP_MSG_SIZE2(*rep)) {
+		fprintf(stderr, "incorrect packet length %d\n", plen);
+		exit(-1);
+	}
+
+	if (rep->hoa != hoa->sin_addr.s_addr) {
+		fprintf(stderr, "incorrect home address %08x, %08x\n", rep->hoa, hoa->sin_addr.s_addr);
+		exit(-1);
+	}
+
+	struct mipsa *sa = find_sa(ntohl(rep->auth.spi));
+	if (!sa) {
+		fprintf(stderr, "incorrect spi %u\n", ntohl(rep->auth.spi));
+		exit(-1);
+	}
+
+	int authlen = authlen_by_sa(sa);
+	if (authlen != rep->auth.length) {
+		fprintf(stderr, "incorrect auth length %d", authlen);
+		exit(-1);
+	}
+
+	if (!verify_by_sa(rep->auth.auth, rep, MIP_MSG_SIZE1(*rep), sa)) {
+		fprintf(stderr, "reply failed authentication\n");
+		exit(-1);
+	}
+
+	// TODO check id
+	
+	if (rep->code != MIPCODE_ACCEPT)
+		return rep->code;
+
+	return 0;
+}
+
 int main(int argc, char** argv)
 {
 	char *p, c, tmp;
 	char *hoa = NULL;
 	char *ha = NULL;
 	char *coa = NULL;
+	char *mn_ifname = NULL;
 	__u32 spi = 0;
 	__u16 lifetime = 0xfffe;
 
@@ -60,7 +106,7 @@ int main(int argc, char** argv)
 	if ((p = strrchr(progname, '/')) != NULL)
 		progname = p + 1;
 
-	while ((c = getopt(argc, argv, "h:m:c:s:l:")) != -1) {
+	while ((c = getopt(argc, argv, "h:m:c:s:l:i:")) != -1) {
 		switch (c) {
 		case 'h':
 			ha = optarg;
@@ -70,6 +116,9 @@ int main(int argc, char** argv)
 			break;
 		case 'c':
 			coa = optarg;
+			break;
+		case 'i':
+			mn_ifname = optarg;
 			break;
 		case 'l':
 			if (sscanf(optarg, "%hu%c", &lifetime, &tmp) != 1) {
@@ -99,6 +148,9 @@ int main(int argc, char** argv)
 
 	if (coa == NULL || strlen(coa) == 0)
 		usage();
+
+	if (mn_ifname == NULL || strlen(mn_ifname) == 0)
+		usage();
 	
 	if (spi < 256) {
 		fprintf(stderr, "error, no spi specified or spi value below 256\n");
@@ -118,6 +170,9 @@ int main(int argc, char** argv)
 		perror("socket");
 		exit(-1);
 	}
+
+	// test mn_ifname
+	sock_get_if_addr(sock, mn_ifname);
 
 	struct sockaddr_in sa_coa;
 	sa_coa.sin_family = AF_INET;
@@ -142,11 +197,6 @@ int main(int argc, char** argv)
 	}
 	printf("ha: %08x\n", sa_ha.sin_addr.s_addr);
 
-	if (connect(sock, (struct sockaddr *)&sa_ha, sizeof(sa_ha)) == -1) {
-		perror("connect");
-		exit(-1);
-	}
-
 	struct sockaddr_in sa_hoa;
 	sa_hoa.sin_family = AF_INET;
 	if (inet_aton(hoa, &sa_hoa.sin_addr) == -1) {
@@ -159,11 +209,41 @@ int main(int argc, char** argv)
 	struct mip_reg_request req;
 	create_reg_request(&req, &sa_hoa, &sa_ha, &sa_coa, sa, lifetime);
 
-	if (send(sock, &req, MIP_MSG_SIZE2(req), 0) == -1) {
+	if (sendto(sock, &req, MIP_MSG_SIZE2(req), 0, (struct sockaddr *)&sa_ha, sizeof(sa_ha)) == -1) {
 		perror("send");
 		exit(-1);
 	}
 
+	struct mip_reg_reply rep;
+	int plen = recv(sock, &rep, sizeof(rep), 0);
+	if (plen == -1) {
+		perror("recv");
+		exit(-1);
+	}
 	close(sock);
+
+	int ret = verify_reply(&rep, plen, &sa_hoa);
+	if (ret != 0) {
+		fprintf(stderr, "reply code = %d, registration failed\n", rep.code);
+		exit(-1);
+	}
+
+	char tif[IFNAMSIZ];
+	tunnel_name(tif, IFNAMSIZ, rep.ha);
+	int tab = table_index(tif);
+
+	// handle deregistration sucess
+	if (lifetime == 0) {
+		set_proxy_arp(mn_ifname, 0);
+		release_tunnel(tif);
+		unregister_source_route(req.hoa, tab, mn_ifname);
+	} 
+	// handle registration success
+	else {
+		create_tunnel(tif, req.coa, rep.ha);
+		set_proxy_arp(mn_ifname, 1);
+		register_source_route(req.hoa, tab, mn_ifname);
+	}
+
 	return 0;
 }

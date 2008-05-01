@@ -172,7 +172,7 @@ int main(int argc, char** argv)
 	}
 
 	// test mn_ifname
-	sock_get_if_addr(sock, mn_ifname);
+	sock_get_if_index(sock, mn_ifname);
 
 	struct sockaddr_in sa_coa;
 	sa_coa.sin_family = AF_INET;
@@ -234,13 +234,15 @@ int main(int argc, char** argv)
 
 	// handle deregistration sucess
 	if (lifetime == 0) {
-		set_proxy_arp(mn_ifname, 0);
-		release_tunnel(tif);
 		unregister_source_route(req.hoa, tab, mn_ifname);
+		set_proxy_arp(mn_ifname, 0);
+		unregister_route_to_tunnel(tif, tab);
+		release_tunnel(tif);
 	} 
 	// handle registration success
 	else {
 		create_tunnel(tif, req.coa, rep.ha);
+		register_route_to_tunnel(tif, tab);
 		set_proxy_arp(mn_ifname, 1);
 		register_source_route(req.hoa, tab, mn_ifname);
 	}

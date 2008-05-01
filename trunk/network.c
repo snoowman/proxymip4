@@ -25,7 +25,7 @@ int create_tunnel(char *tif, in_addr_t laddr, in_addr_t raddr)
 	snprintf(remote, 20, "%s", inet_ntoa(addr));
 
 	char cmd[1024];
-	snprintf(cmd, 1024, "ip tunnel add %s mode ipip remote %s local %s", tif, local, remote);
+	snprintf(cmd, 1024, "ip tunnel add %s mode ipip remote %s local %s", tif, remote, local);
 	int ret = system(cmd);
 	if (ret < 0)
 		return ret;
@@ -98,6 +98,20 @@ int set_proxy_arp(char *mif, int flag)
 	fclose(fp);
 
 	return 0;
+}
+
+int register_route_to_tunnel(char *tif, int tab)
+{
+	char cmd[1024];
+	snprintf(cmd, 1024, "ip route add default dev %s table %d", tif, tab);
+	return system(cmd);
+}
+
+int unregister_route_to_tunnel(char *tif, int tab)
+{
+	char cmd[1024];
+	snprintf(cmd, 1024, "ip route del default dev %s table %d", tif, tab);
+	return system(cmd);
 }
 
 int register_source_route(in_addr_t hoa, int tab, char *mif)

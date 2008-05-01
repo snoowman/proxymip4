@@ -19,6 +19,7 @@
 #include "bcache.h"
 
 char *progname;
+char *home_ifname = NULL;
 
 static void usage()
 {
@@ -87,19 +88,30 @@ int verify_request(struct mip_reg_request *req, int plen, in_addr_t ha)
 			fprintf(stderr, "identifier smaller than previous one\n");
 			return MIPCODE_BAD_ID;
 		}
+
+		// handle de-register with lifetime = 0
+		if (req->lifetime == 0) {
+			remove_binding(b);
+			return MIPCODE_ACCEPT;
+		}
+
+		// handle handover
+		if (req->coa != b->coa) {
+			change_binding(b, req->coa);
+			return MIPCODE_ACCEPT;
+		}
 	}
-	else if (req->lifetime) {
+	else {
+		if (req->lifetime == 0)
+			return MIPCODE_BAD_ACCESS;
+	
 		b = malloc(sizeof(struct binding));
 		b->hoa = req->hoa;
 		b->ha = req->ha;
 		b->coa = req->coa;
+		b->homeif = home_ifname;
 
 		add_binding(b);
-	}
-
-	if (req->lifetime == 0 && b) {
-		remove_binding(b);
-		return MIPCODE_ACCEPT;
 	}
 
 	b->lastid = id;
@@ -137,7 +149,6 @@ void create_reg_reply(struct mip_reg_reply *rep, struct mip_reg_request *req, in
 int main(int argc, char** argv)
 {
 	char *p, c;
-	char *ifname = NULL;
 
 	progname = argv[0];
 	if ((p = strrchr(progname, '/')) != NULL)
@@ -146,7 +157,7 @@ int main(int argc, char** argv)
 	while ((c = getopt(argc, argv, "i:")) != -1) {
 		switch (c) {
 		case 'i':
-			ifname = optarg;
+			home_ifname = optarg;
 			break;
 		default:
 			usage();
@@ -156,7 +167,7 @@ int main(int argc, char** argv)
 	if (argc == 1)
 		usage();
 	
-	if (ifname == NULL || strlen(ifname) == 0)
+	if (home_ifname == NULL || strlen(home_ifname) == 0)
 		usage();
 	
 	int sock = socket(PF_INET, SOCK_DGRAM, 0);
@@ -174,7 +185,7 @@ int main(int argc, char** argv)
 		exit(-1);
 	}
 
-	in_addr_t ha = sock_get_if_addr(sock, ifname);
+	in_addr_t ha = sock_get_if_addr(sock, home_ifname);
 	printf("ha %08x\n", ha);
 
 	load_sadb();

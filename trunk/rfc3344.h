@@ -19,6 +19,7 @@
 #define MIP_MSG_SIZE2(req) (sizeof((req)) - MIP_AUTH_MAX + (req).auth.length - 4)
 
 #define MIPCODE_ACCEPT     0 
+#define MIPCODE_BAD_ACCESS 129
 #define MIPCODE_BAD_AUTH   131
 #define MIPCODE_BAD_ID     133
 #define MIPCODE_BAD_FORMAT 134

@@ -109,6 +109,19 @@ in_addr_t sock_get_if_addr(int sock, char *ifname)
 	return sin->sin_addr.s_addr;
 }
 
+int sock_get_if_index(int sock, char *ifname)
+{
+	struct ifreq ifr;
+	memset(&ifr, 0, sizeof(ifr));
+	strncpy(ifr.ifr_name, ifname, IFNAMSIZ-1);
+
+	if (ioctl(sock, SIOCGIFINDEX, &ifr) < 0) {
+		perror("ioctl: SIOCGIFADDR");
+		exit(-1);
+	}
+	return ifr.ifr_ifindex;
+}
+
 int sock_get_if_prefix(int sock, char *ifname)
 {
 	struct ifreq ifr;

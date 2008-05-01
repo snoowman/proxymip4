@@ -17,4 +17,7 @@ int set_proxy_arp(char *mif, int flag);
 int register_source_route(in_addr_t hoa, int tab, char *mif);
 int unregister_source_route(in_addr_t hoa, int tab, char *mif);
 
+int register_route_to_tunnel(char *tif, int tab);
+int unregister_route_to_tunnel(char *tif, int tab);
+
 #endif

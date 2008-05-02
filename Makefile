@@ -13,7 +13,7 @@ pma: pma.o common.o sadb.o network.o
 mipsa: mipsa.o common.o sadb.o
 
 clean:
-	rm *.o *.d $(PROGS) || true
+	rm -f *.o *.d $(PROGS) || true
 
 %.o: %.c
 	$(COMPILE.c) $*.c -o $*.o

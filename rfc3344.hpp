@@ -454,7 +454,7 @@ private:
     }
 
     if (lastid_[q.hoa] == 0) {
-      lastid_[q.hoa] = q.id;
+      lastid_[q.hoa] = id;
     }
     else if (id <= lastid_[q.hoa]) {
       fprintf(stderr, "identifier smaller than previous one\n");

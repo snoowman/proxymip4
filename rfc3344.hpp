@@ -5,8 +5,10 @@
 #ifndef PMIP_RFC3344_HPP
 #define PMIP_RFC3344_HPP
 
+#include <stdio.h>
 #include <asm/types.h>
 #include <netinet/in.h>
+#include <map>
 #include "rfc1256.hpp"
 #include "sockpp.hpp"
 #include "packet.hpp"
@@ -369,6 +371,7 @@ inline __u64 time_stamp()
 class ha_socket {
   sockpp::udp_socket mip_;
   sockpp::in_iface const &homeif_;
+  std::map<__u32, __u64> lastid_;
 
 private:
   struct mip_rrp create_rrp(struct mip_rrq const &q, int errcode)
@@ -389,7 +392,7 @@ private:
     p.auth.spi = q.auth.spi;
     if (sa) {
       p.auth.length = authlen_by_sa(sa);
-      auth_by_sa(p.auth.auth, (char *)&p, mip_msg_authsize(p), sa);
+      auth_by_sa(p.auth.auth, &p, mip_msg_authsize(p), sa);
     }
     else {
       p.auth.length = q.auth.length;
@@ -397,7 +400,7 @@ private:
     return p;
   }
 
-  int verify_rrq(struct mip_rrq const &q, size_t len)
+  int verify_rrq(struct mip_rrq &q, size_t len)
   {
     if (q.type != MIPTYPE_REQUEST) {
       fprintf(stderr, "incorrect MIP type value %d\n", q.type);
@@ -431,63 +434,32 @@ private:
       return MIPCODE_BAD_FORMAT;
     }
   
-    if (!verify_by_sa(q.auth.auth, (char *)&q, mip_msg_authsize(q), sa)) {
+    if (!verify_by_sa(q.auth.auth, &q, mip_msg_authsize(q), sa)) {
       fprintf(stderr, "mobile node failed authentication\n");
       return MIPCODE_BAD_AUTH;
     }
-  
-#if 0
+
     __u64 id = ntohll(q.id);
     __u64 t1 = id >> 32;
     __u64 t2 = time_stamp() >> 32;
-  
+    
     if ((unsigned int)abs(t1 - t2) > sa->delay) {
       fprintf(stderr, "time not synchronized\n");
-  
+
       // reset q id to home agent's time
-      id &= (1llu << 32) - 1;
+      id &= (1LLU << 32) - 1;
       id |= t2 << 32;
       q.id = htonll(id);
       return MIPCODE_BAD_ID;
     }
-  
-    struct binding *b = find_binding(q.hoa);
-    if (b) {
-      if (id <= b->lastid) {
-        fprintf(stderr, "identifier smaller than previous one\n");
-        return MIPCODE_BAD_ID;
-      }
-  
-      // handle de-register with lifetime = 0
-      if (q.lifetime == 0) {
-        remove_binding(b);
-        return MIPCODE_ACCEPT;
-      }
-  
-      // handle handover
-      if (q.coa != b->coa) {
-        change_binding(b, q.coa);
-        return MIPCODE_ACCEPT;
-      }
+
+    if (lastid_[q.hoa] == 0) {
+      lastid_[q.hoa] = q.id;
     }
-    else {
-      if (q.lifetime == 0)
-        return MIPCODE_BAD_ACCESS;
-    
-      b = malloc(sizeof(struct binding));
-      b->hoa = q.hoa;
-      b->ha = q.ha;
-      b->coa = q.coa;
-  
-      add_binding(b);
+    else if (id <= lastid_[q.hoa]) {
+      fprintf(stderr, "identifier smaller than previous one\n");
+      return MIPCODE_BAD_ID;
     }
-  
-    b->lastid = id;
-    if (q.lifetime == 0xffff)
-      b->timeout = 0;
-    else
-      b->timeout = time(NULL) + ntohs(q.lifetime);
-#endif 
   
     return MIPCODE_ACCEPT;
   }
@@ -515,6 +487,7 @@ public:
 class pma_socket {
   sockpp::udp_socket mip_;
 
+private:
   void create_rrq(struct mip_rrq *q, sockpp::in_address const &hoa, sockpp::in_address const &ha, sockpp::in_address &coa, sadb::mipsa *sa, __u16 lifetime)
   {
     bzero(q, sizeof(*q));
@@ -531,7 +504,7 @@ class pma_socket {
     q->auth.spi = htonl(sa->spi);
   
     q->auth.length = authlen_by_sa(sa);
-    auth_by_sa(q->auth.auth, (char *)q, mip_msg_authsize(*q), sa);
+    auth_by_sa(q->auth.auth, q, mip_msg_authsize(*q), sa);
   }
 
   void verify_rrp(struct mip_rrp const &p, size_t len, struct mip_rrq const &q)
@@ -553,7 +526,7 @@ class pma_socket {
     if (authlen != p.auth.length)
       throw packet::bad_packet("incorrect auth length");
 
-    if (!verify_by_sa(p.auth.auth, (char *)&p, mip_msg_authsize(p), sa))
+    if (!verify_by_sa(p.auth.auth, &p, mip_msg_authsize(p), sa))
       throw packet::bad_packet("authentication failed ");
   }
 
@@ -563,13 +536,12 @@ public:
     randomize();
   }
 
-  struct mip_rrp request(char* ifname, char *strhoa, char *strha, char *strcoa, __u32 spi, __u16 lifetime) {
+  struct mip_rrp request(char *strhoa, char *strha, char *strcoa, __u32 spi, __u16 lifetime) {
     sadb::mipsa *sa = sadb::find_sa(spi);
 
     if (!sa)
       throw sadb::invalid_spi();
 
-    sockpp::in_iface mif(ifname);
     sockpp::in_address hoa(strhoa);
     sockpp::in_address ha(strha, MIP_PORT);
     sockpp::in_address coa(strcoa);

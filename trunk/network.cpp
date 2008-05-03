@@ -8,6 +8,12 @@
 //#include "common.h"
 #include "network.hpp"
 
+int my_system(char const* cmd)
+{
+	printf("%s\n", cmd);
+	return system(cmd);
+}
+
 char *tunnel_name(in_addr_t raddr)
 {
 	static char buf[IFNAMSIZ];
@@ -29,19 +35,19 @@ int create_tunnel(in_addr_t laddr, in_addr_t raddr)
 
 	char cmd[1024];
 	snprintf(cmd, 1024, "ip tunnel add %s mode ipip remote %s local %s", tunnel_name(raddr), remote, local);
-	int ret = system(cmd);
+	int ret = my_system(cmd);
 	if (ret < 0)
 		return ret;
 	
 	snprintf(cmd, 1024, "ifconfig %s 0.0.0.0 up", tunnel_name(raddr));
-	return system(cmd);
+	return my_system(cmd);
 }
 
 int release_tunnel(in_addr_t raddr)
 {
 	char cmd[1024];
 	snprintf(cmd, 1024, "ip tunnel del %s", tunnel_name(raddr));
-	return system(cmd);
+	return my_system(cmd);
 }
 
 int register_hoa(in_addr_t hoa, in_addr_t coa, char const *hif)
@@ -53,12 +59,12 @@ int register_hoa(in_addr_t hoa, in_addr_t coa, char const *hif)
 
 	char cmd[1024];
 	snprintf(cmd, 1024, "ip route add %s/32 dev %s", mnaddr, tunnel_name(coa));
-	int ret = system(cmd);
+	int ret = my_system(cmd);
 	if (ret < 0)
 		return ret;
 	
 	snprintf(cmd, 1024, "arp -n -Ds %s %s pub", mnaddr, hif);
-	return system(cmd);
+	return my_system(cmd);
 }
 
 int deregister_hoa(in_addr_t hoa, in_addr_t coa, char const *hif)
@@ -70,12 +76,12 @@ int deregister_hoa(in_addr_t hoa, in_addr_t coa, char const *hif)
 
 	char cmd[1024];
 	snprintf(cmd, 1024, "arp -n -d %s -i %s pub", mnaddr, hif);
-	int ret = system(cmd);
+	int ret = my_system(cmd);
 	if (ret < 0)
 		return ret;
 	
-	snprintf(cmd, 1024, "ip route add %s/32 dev %s", mnaddr, tunnel_name(coa));
-	return system(cmd);
+	snprintf(cmd, 1024, "ip route del %s/32 dev %s", mnaddr, tunnel_name(coa));
+	return my_system(cmd);
 }	
 
 int set_proxy_arp(char const *mif, int flag)
@@ -99,14 +105,14 @@ int register_route_to_tunnel(in_addr_t ha, int tab)
 {
 	char cmd[1024];
 	snprintf(cmd, 1024, "ip route add default dev %s table %d", tunnel_name(ha), tab);
-	return system(cmd);
+	return my_system(cmd);
 }
 
 int unregister_route_to_tunnel(in_addr_t ha, int tab)
 {
 	char cmd[1024];
 	snprintf(cmd, 1024, "ip route del default dev %s table %d", tunnel_name(ha), tab);
-	return system(cmd);
+	return my_system(cmd);
 }
 
 int register_source_route(in_addr_t hoa, int tab, char const *mif)
@@ -118,12 +124,12 @@ int register_source_route(in_addr_t hoa, int tab, char const *mif)
 
 	char cmd[1024];
 	snprintf(cmd, 1024, "ip route add %s/32 dev %s", mnaddr, mif);
-	int ret = system(cmd);
+	int ret = my_system(cmd);
 	if (ret < 0)
 		return ret;
 	
 	snprintf(cmd, 1024, "ip rule add from %s/32 lookup %d", mnaddr, tab);
-	return system(cmd);
+	return my_system(cmd);
 }
 
 int unregister_source_route(in_addr_t hoa, int tab, char const *mif)
@@ -135,11 +141,11 @@ int unregister_source_route(in_addr_t hoa, int tab, char const *mif)
 
 	char cmd[1024];
 	snprintf(cmd, 1024, "ip route del %s/32 dev %s", mnaddr, mif);
-	int ret = system(cmd);
+	int ret = my_system(cmd);
 	if (ret < 0)
 		return ret;
 	
 	snprintf(cmd, 1024, "ip rule del from %s/32 lookup %d", mnaddr, tab);
-	return system(cmd);
+	return my_system(cmd);
 }
 

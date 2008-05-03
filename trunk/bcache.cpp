@@ -26,10 +26,8 @@ void cache::register_binding(in_addr_t hoa, in_addr_t ha, in_addr_t coa, __u16 l
     b.timeout = time(NULL) + ntohs(lifetime);
 
   // setup network for hoa
-  if (coa_refcnt_[coa] == 0) {
+  if (coa_refcnt_[coa]++ == 0)
     create_tunnel(ha, coa);
-    ++coa_refcnt_[coa];
-  }
   register_hoa(hoa, coa, hif_.name());
 }
 
@@ -41,10 +39,8 @@ bool cache::deregister_binding(in_addr_t hoa)
   binding const &b = bindings_[hoa];
   // free network resource
   deregister_hoa(b.hoa, b.coa, hif_.name());
-  if (coa_refcnt_[b.coa] > 0) {
-    --coa_refcnt_[b.coa];
+  if (--coa_refcnt_[b.coa] == 0)
     release_tunnel(b.coa);
-  }
 
   // remove binding
   bindings_.erase(hoa);

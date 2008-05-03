@@ -141,7 +141,7 @@ int scan_sa(FILE *fp, struct mipsa *sa)
   return 0;
 }
 
-int auth_by_sa(char *auth, char const *buf, ssize_t len, struct mipsa *sa)
+int auth_by_sa(char *auth, void const *buf, ssize_t len, struct mipsa *sa)
 {
   char *cmd[] = {"/usr/bin/openssl", (char*)sa->hmac.c_str(),  "-binary", NULL};;
   int rfd, wfd;
@@ -154,7 +154,7 @@ int auth_by_sa(char *auth, char const *buf, ssize_t len, struct mipsa *sa)
   return ret;
 }
 
-int verify_by_sa(char const *old_auth, char const *buf, ssize_t len, struct mipsa *sa)
+int verify_by_sa(char const *old_auth, void const *buf, ssize_t len, struct mipsa *sa)
 {
   char auth[MIP_AUTH_MAX];
   int authlen = auth_by_sa(auth, buf, len, sa);

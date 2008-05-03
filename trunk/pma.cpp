@@ -9,7 +9,7 @@
 #include "rfc3344.hpp"
 #include "sadb.hpp"
 #include "sockpp.hpp"
-//#include "network.h"
+#include "network.hpp"
 
 using namespace std;
 using namespace boost;
@@ -29,7 +29,6 @@ static void usage()
      progname);
   exit(-1);
 }
-
 
 int main(int argc, char** argv)
 {
@@ -81,33 +80,32 @@ int main(int argc, char** argv)
 
   try {
     pma_socket pmagent;
-    struct mip_rrp p = pmagent.request(ifname, hoa, ha, coa, spi, lifetime);
-    fprintf(stderr, "reply code = %d, registration %s\n", p.code, 
-        (p.code == MIPCODE_ACCEPT)? "successed":"failed");
+    struct mip_rrp p = pmagent.request(hoa, ha, coa, spi, lifetime);
+    if (p.code != MIPCODE_ACCEPT) {
+      fprintf(stderr, "reply code = %d, registration failed\n", p.code);
+      return -1;
+    }
+
+    int tab = 200;
+
+    // handle deregistration sucess
+    if (lifetime == 0) {
+      unregister_source_route(p.hoa, tab, ifname);
+      set_proxy_arp(ifname, 0);
+      unregister_route_to_tunnel(p.ha, tab);
+      release_tunnel(p.ha);
+    } 
+    // handle registration success
+    else {
+      create_tunnel(sockpp::in_address(coa).to_u32(), p.ha);
+      register_route_to_tunnel(p.ha, tab);
+      set_proxy_arp(ifname, 1);
+      register_source_route(p.hoa, tab, ifname);
+    }
   }
   catch (exception &e) {
     fprintf(stderr, "%s\n", e.what());
   }
 
-#if 0
-  char tif[IFNAMSIZ];
-  tunnel_name(tif, IFNAMSIZ, p.ha);
-  int tab = table_index(tif);
-
-  // handle deregistration sucess
-  if (lifetime == 0) {
-    unregister_source_route(q.hoa, tab, ifname);
-    set_proxy_arp(ifname, 0);
-    unregister_route_to_tunnel(tif, tab);
-    release_tunnel(tif);
-  } 
-  // handle registration success
-  else {
-    create_tunnel(tif, q.coa, p.ha);
-    register_route_to_tunnel(tif, tab);
-    set_proxy_arp(ifname, 1);
-    register_source_route(q.hoa, tab, ifname);
-  }
-#endif
   return 0;
 }

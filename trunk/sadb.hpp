@@ -33,8 +33,8 @@ void print_sa(FILE *fp, struct mipsa *sa);
 int scan_sa(FILE *fp, struct mipsa *sa);
 
 ssize_t authlen_by_sa(struct mipsa *sa);
-int auth_by_sa(char *auth, char const *buf, ssize_t len, struct mipsa *sa);
-int verify_by_sa(char const *auth, char const *buf, ssize_t len, struct mipsa *sa);
+int auth_by_sa(char *auth, void const *buf, ssize_t len, struct mipsa *sa);
+int verify_by_sa(char const *auth, void const *buf, ssize_t len, struct mipsa *sa);
 
 class bad_spi : public std::range_error {
 public:

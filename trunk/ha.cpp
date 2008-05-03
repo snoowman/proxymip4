@@ -8,14 +8,17 @@
 #include "rfc3344.hpp"
 #include "sadb.hpp"
 #include "packet.hpp"
-//#include "bcache.h"
+#include "bcache.hpp"
 
 using namespace std;
 using namespace sockpp;
 using namespace rfc3344;
 using namespace sadb;
+using namespace bcache;
 
 char *progname;
+
+cache *pbc = NULL;
 
 static void usage()
 {
@@ -27,7 +30,8 @@ static void usage()
 
 static void sigusr1(int signo)
 {
-  //list_binding();
+  if (pbc)
+    pbc->list_binding();
   load_sadb();
 }
 
@@ -47,25 +51,31 @@ int main(int argc, char** argv)
     }
   }
 
-  if (argc == 1)
-    usage();
-  
-  if (ifname == NULL || strlen(ifname) == 0)
+  if (argc == 1 || ifname == NULL)
     usage();
   
   try {
-    signal(SIGUSR1, sigusr1);
 
     in_iface homeif(ifname);
     printf("ha %s\n", homeif.addr().to_string());
     ha_socket hagent(homeif);
-  
+
+    cache bc(homeif);
+    pbc = &bc;
+    signal(SIGUSR1, sigusr1);
+
     for(;;) {
       struct mip_rrq q;
       in_address from;
+
       int errcode = hagent.recv(q, from);
-      // proccess rrq
-      // ...
+      if (errcode == rfc3344::MIPCODE_ACCEPT) {
+        if (q.lifetime == 0)
+          bc.deregister_binding(q.hoa);
+        else
+          bc.register_binding(q.hoa, q.ha, q.coa, q.lifetime);
+      }
+
       hagent.reply(errcode, q, from);
     }
   }

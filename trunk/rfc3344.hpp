@@ -165,7 +165,7 @@ public:
     : ifa_(ifa), vars_(vars)
   {
     icmp_.bindif(ifa); 
-    icmp_.join_mcast(sockpp::in_address(INADDR_ALLRTRS_GROUP));
+    icmp_.join_mcast(sockpp::in_address(htonl(INADDR_ALLRTRS_GROUP)));
     icmp_.icmp_filter(rfc1256::ICMP_ROUTER_SOL);
   }
   
@@ -193,7 +193,7 @@ public:
   }
 
   void serv_multicast() {
-    sockpp::in_address multicast(INADDR_ALLHOSTS_GROUP);
+    sockpp::in_address multicast(htonl(INADDR_ALLHOSTS_GROUP));
 
     for (;;) {
       send_rtadv(multicast);
@@ -238,7 +238,7 @@ private:
 
 public:
   rtsol_socket() {
-    icmp_.join_mcast(sockpp::in_address(INADDR_ALLHOSTS_GROUP));
+    icmp_.join_mcast(sockpp::in_address(htonl(INADDR_ALLHOSTS_GROUP)));
     icmp_.icmp_filter(rfc1256::ICMP_ROUTER_ADV);
   }
 
@@ -250,7 +250,7 @@ public:
     char buf[packet::MTU];
     int len = create_rtsol_msg(buf, packet::MTU);
 
-    sockpp::in_address dest(INADDR_ALLRTRS_GROUP);
+    sockpp::in_address dest(htonl(INADDR_ALLRTRS_GROUP));
     icmp_.sendto(buf, len, dest);
   }
 
@@ -488,16 +488,16 @@ class pma_socket {
   sockpp::udp_socket mip_;
 
 private:
-  void create_rrq(struct mip_rrq *q, sockpp::in_address const &hoa, sockpp::in_address const &ha, sockpp::in_address &coa, sadb::mipsa *sa, __u16 lifetime)
+  void create_rrq(struct mip_rrq *q, in_addr_t hoa, in_addr_t ha, in_addr_t coa, sadb::mipsa *sa, __u16 lifetime)
   {
     bzero(q, sizeof(*q));
     q->type = MIPTYPE_REQUEST;
     q->flag_T = 1;
     q->lifetime = htons(lifetime);
   
-    q->hoa = hoa.to_u32();
-    q->ha = ha.to_u32();
-    q->coa = coa.to_u32();
+    q->hoa = hoa;
+    q->ha = ha;
+    q->coa = coa;
     q->id = htonll(time_stamp());
   
     q->auth.type = MIP_EXTTYPE_AUTH;
@@ -536,21 +536,20 @@ public:
     randomize();
   }
 
-  struct mip_rrp request(char *strhoa, char *strha, char *strcoa, __u32 spi, __u16 lifetime) {
+  struct mip_rrp request(in_addr_t hoa, in_addr_t ha, in_addr_t coa, __u32 spi, __u16 lifetime) {
     sadb::mipsa *sa = sadb::find_sa(spi);
 
     if (!sa)
       throw sadb::invalid_spi();
 
-    sockpp::in_address hoa(strhoa);
-    sockpp::in_address ha(strha, MIP_PORT);
-    sockpp::in_address coa(strcoa);
-
-    mip_.bind(coa);
+    sockpp::in_address coa_port(coa);
+    mip_.bind(coa_port);
 
     struct mip_rrq q;
     create_rrq(&q, hoa, ha, coa, sa, lifetime);
-    mip_.sendto((char *)&q, mip_msg_size(q), ha);
+
+    sockpp::in_address ha_port(ha, MIP_PORT);
+    mip_.sendto((char *)&q, mip_msg_size(q), ha_port);
 
     struct mip_rrp p;
     size_t len = mip_.recv((char *)&p, sizeof(p));

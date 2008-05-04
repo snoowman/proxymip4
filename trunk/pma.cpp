@@ -9,19 +9,22 @@
 #include "rfc3344.hpp"
 #include "sadb.hpp"
 #include "sockpp.hpp"
-#include "network.hpp"
+#include "bcache.hpp"
 
 using namespace std;
 using namespace boost;
 using namespace rfc3344;
+using namespace bcache;
+using namespace sockpp;
 
 char *progname;
 
 static void usage()
 {
-  fprintf(stderr, "Usage: %s -m <hoa> -c <coa> -h <ha> -s <spi> -i <if> -l <life>\n\
-  -m   register home address 'hoa'\n\
-  -c   using care-of address 'coa'\n\
+  fprintf(stderr, "Usage: %s -m <hoa> -c <coa> -h <ha> -s <spi> -i <if> -l <life> -f\n\
+  -m   register home address 'strhoa'\n\
+  -f   force free resource local\n\
+  -c   using care-of address 'strcoa'\n\
   -h   register with home agent 'ha'\n\
   -l   lifetime, default to 0xfffe\n\
   -i   link 'if' which mn reside\n\
@@ -34,34 +37,38 @@ int main(int argc, char** argv)
 {
   progname = parse_progname(argv[0]);
 
-  char *hoa = NULL;
-  char *ha = NULL;
-  char *coa = NULL;
+  in_addr_t hoa = 0;
+  in_addr_t ha = 0;
+  in_addr_t coa = 0;
   char *ifname = NULL;
   __u32 spi = 0;
   __u16 lifetime = 0xfffe;
+  bool force = false;
 
   try {
     char c;
-    while ((c = getopt(argc, argv, "h:m:c:s:l:i:")) != -1) {
+    while ((c = getopt(argc, argv, "h:m:c:s:l:i:f")) != -1) {
       switch (c) {
       case 'h':
-        ha = optarg;
+        ha = in_address(optarg).to_u32();
         break;
       case 'm':
-        hoa = optarg;
+        hoa = in_address(optarg).to_u32();
         break;
       case 'c':
-        coa = optarg;
+        coa = in_address(optarg).to_u32();
         break;
       case 'i':
         ifname = optarg;
         break;
       case 'l':
-        lifetime = lexical_cast<unsigned int>(optarg);
+        lifetime = lexical_cast<__u16>(optarg);
         break;
       case 's':
-        spi =  lexical_cast<unsigned int>(optarg);
+        spi =  lexical_cast<__u32>(optarg);
+        break;
+      case 'f':
+        force = true;
         break;
       default:
         usage();
@@ -75,32 +82,28 @@ int main(int argc, char** argv)
   if (argc == 1)
     usage();
   
-  if (ha == NULL || hoa == NULL || coa == NULL || ifname == NULL)
+  if (ha == 0 || hoa == 0 || coa == 0 || ifname == NULL)
     usage();
 
   try {
     pma_socket pmagent;
+    pma_bcache bc;
+
     struct mip_rrp p = pmagent.request(hoa, ha, coa, spi, lifetime);
     if (p.code != MIPCODE_ACCEPT) {
       fprintf(stderr, "reply code = %d, registration failed\n", p.code);
       return -1;
     }
 
-    int tab = 200;
-
-    // handle deregistration sucess
+    bc.register_mif(hoa, ifname);
     if (lifetime == 0) {
-      unregister_source_route(p.hoa, tab, ifname);
-      set_proxy_arp(ifname, 0);
-      unregister_route_to_tunnel(p.ha, tab);
-      release_tunnel(p.ha);
-    } 
-    // handle registration success
+      if (force)
+        bc.deregister_local(hoa, ha, coa);
+      else
+        bc.deregister_binding(hoa);
+    }
     else {
-      create_tunnel(sockpp::in_address(coa).to_u32(), p.ha);
-      register_route_to_tunnel(p.ha, tab);
-      set_proxy_arp(ifname, 1);
-      register_source_route(p.hoa, tab, ifname);
+      bc.register_binding(hoa, ha, coa, spi, lifetime);
     }
   }
   catch (exception &e) {

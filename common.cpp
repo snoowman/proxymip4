@@ -1,4 +1,5 @@
 #include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -82,4 +83,38 @@ char *parse_progname(char *path)
   if ((p = strrchr(path, '/')) != NULL)
     return p + 1;
   return path;
+}
+
+void daemonize(char const *progname, sighandler_t handler)
+{
+  if (getppid_ex() == 1)
+  	return;
+
+  // setup signal
+  signal(SIGTSTP, SIG_IGN);
+  signal(SIGTTOU, SIG_IGN);
+  signal(SIGTTIN, SIG_IGN);
+
+  pid_t pid = fork_ex();
+  if (pid)
+    exit(0);
+
+  setsid_ex();
+
+  pid_t pid2 = fork_ex();
+  if (pid2)
+    exit(0);
+
+  chdir_ex("/tmp");
+  umask(0);
+ 
+  close_ex(STDIN_FILENO);
+  close_ex(STDOUT_FILENO);
+  close_ex(STDERR_FILENO);
+
+  //signal(SIGCHLD, SIG_IGN);
+  signal(SIGHUP, handler);
+  signal(SIGINT, handler);
+  signal(SIGQUIT, handler);
+  signal(SIGTERM, handler);
 }

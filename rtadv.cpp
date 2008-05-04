@@ -28,6 +28,13 @@ Usage: %s -i <interface> [-b] [-m num] [-n num] [-l num]\n\
   exit(-1);
 }
 
+void signal_handler(int signo)
+{
+  syslog(LOG_INFO, "stopped %s daemon on receiving signal no: %d", progname, signo);
+  closelog();
+  exit(0);
+}
+
 int main(int argc, char** argv)
 {
   progname = parse_progname(argv[0]);
@@ -67,14 +74,18 @@ int main(int argc, char** argv)
   if (ifname == NULL || strlen(ifname) == 0)
     usage();
 
-  printf("\
-MaxAdvInterval %d\n\
-MinAdvInterval %d\n\
-AdvLifetime %d\n", router_vars.max_adv(), router_vars.min_adv(), router_vars.adv_lifetime());
 
   try {
     in_iface ifa(ifname);
     rtadv_socket rtadv(ifa, router_vars);
+
+    daemonize(progname, signal_handler);
+    openlog(progname, 0, LOG_DAEMON);
+
+    syslog(LOG_INFO, "rf1256 variable MaxAdvInterval = %d", router_vars.max_adv());
+    syslog(LOG_INFO, "rf1256 variable MinAdvInterval = %d", router_vars.min_adv());
+    syslog(LOG_INFO, "rf1256 variable AdvLifetime    = %d", router_vars.adv_lifetime());
+
     rtadv.serv_multicast();
   }
   catch(exception &e) {

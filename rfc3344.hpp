@@ -6,6 +6,7 @@
 #define PMIP_RFC3344_HPP
 
 #include <stdio.h>
+#include <syslog.h>
 #include <asm/types.h>
 #include <netinet/in.h>
 #include <map>
@@ -195,24 +196,28 @@ public:
   void serv_multicast() {
     sockpp::in_address multicast(htonl(INADDR_ALLHOSTS_GROUP));
 
-    for (;;) {
-      send_rtadv(multicast);
-
-      timeval tv = vars_.adv_interval();
-      printf("sending rtadv after %lu.%06lu s delay\n", tv.tv_sec, tv.tv_usec);
-      reply_unicast_timeout(tv);
+    try {
+      for (;;) {
+        send_rtadv(multicast);
+  
+        timeval tv = vars_.adv_interval();
+        syslog(LOG_INFO, "sending rtadv after %lu.%06lu s delay\n", tv.tv_sec, tv.tv_usec);
+        reply_unicast_timeout(tv);
+      }
+    }
+    catch (std::exception &e) {
+      syslog(LOG_ERR, "error: %s", e.what());
     }
   }
 
   void reply_unicast_timeout(timeval &tv) {
-
     while(icmp_.select_read(tv) > 0) {
       try {
         sockpp::in_address sol_addr = recv_rtsol();
         send_rtadv(sol_addr);
       }
       catch (packet::bad_packet &e) {
-        fprintf(stderr, "WARNING: %s\n", e.what());
+        syslog(LOG_WARNING, "%s\n", e.what());
       }
     }
   }
@@ -403,39 +408,39 @@ private:
   int verify_rrq(struct mip_rrq &q, size_t len)
   {
     if (q.type != MIPTYPE_REQUEST) {
-      fprintf(stderr, "incorrect MIP type value %d\n", q.type);
+      syslog(LOG_WARNING, "incorrect MIP type value %d\n", q.type);
       return MIPCODE_BAD_FORMAT;
     }
   
     if (len > sizeof(q) || len < mip_msg_authsize(q)) {
-      fprintf(stderr, "incorrect packet length %d\n", len);
+      syslog(LOG_WARNING, "incorrect packet length %d\n", len);
       return MIPCODE_BAD_FORMAT;
     }
 
     if (len != mip_msg_size(q)) {
-      fprintf(stderr, "incorrect packet length %d\n", len);
+      syslog(LOG_WARNING, "incorrect packet length %d\n", len);
       return MIPCODE_BAD_FORMAT;
     }
   
     if (q.ha != homeif_.addr().to_u32()) {
-      fprintf(stderr, "incorrect home agent address %08x\n", q.ha);
+      syslog(LOG_WARNING, "incorrect home agent address %08x\n", q.ha);
       return MIPCODE_BAD_HA;
     }
   
     sadb::mipsa *sa = sadb::find_sa(ntohl(q.auth.spi));
     if (!sa) {
-      fprintf(stderr, "incorrect spi %u\n", ntohl(q.auth.spi));
+      syslog(LOG_WARNING, "incorrect spi %u\n", ntohl(q.auth.spi));
       return MIPCODE_BAD_AUTH;
     }
   
     int authlen = authlen_by_sa(sa);
     if (authlen != q.auth.length) {
-      fprintf(stderr, "incorrect auth length %d", authlen);
+      syslog(LOG_WARNING, "incorrect auth length %d", authlen);
       return MIPCODE_BAD_FORMAT;
     }
   
     if (!verify_by_sa(q.auth.auth, &q, mip_msg_authsize(q), sa)) {
-      fprintf(stderr, "mobile node failed authentication\n");
+      syslog(LOG_WARNING, "mobile node failed authentication\n");
       return MIPCODE_BAD_AUTH;
     }
 
@@ -444,7 +449,7 @@ private:
     __u64 t2 = time_stamp() >> 32;
     
     if ((unsigned int)abs(t1 - t2) > sa->delay) {
-      fprintf(stderr, "time not synchronized\n");
+      syslog(LOG_WARNING, "time not synchronized\n");
 
       // reset q id to home agent's time
       id &= (1LLU << 32) - 1;
@@ -457,7 +462,7 @@ private:
       lastid_[q.hoa] = id;
     }
     else if (id <= lastid_[q.hoa]) {
-      fprintf(stderr, "identifier smaller than previous one\n");
+      syslog(LOG_WARNING, "identifier smaller than previous one\n");
       return MIPCODE_BAD_ID;
     }
   

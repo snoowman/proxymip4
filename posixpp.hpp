@@ -47,6 +47,10 @@ inline T except_wrapper(T ret, T val, char const *pre, char const *file, int lin
 #define write_ex(arglist...) except_wrapper(::write(arglist), -1, "write", __FILE__, __LINE__, __PRETTY_FUNCTION__)
 #define unlink_ex(arglist...) except_wrapper(::unlink(arglist), -1, "unlink", __FILE__, __LINE__, __PRETTY_FUNCTION__)
 #define setsockopt_ex(arglist...) except_wrapper(::setsockopt(arglist), -1, "setsockopt", __FILE__, __LINE__, __PRETTY_FUNCTION__)
+#define fork_ex(arglist...) except_wrapper(::fork(arglist), -1, "fork", __FILE__, __LINE__, __PRETTY_FUNCTION__)
+#define getppid_ex(arglist...) except_wrapper(::getppid(arglist), -1, "getppid", __FILE__, __LINE__, __PRETTY_FUNCTION__)
+#define setsid_ex(arglist...) except_wrapper(::setsid(arglist), -1, "setsid", __FILE__, __LINE__, __PRETTY_FUNCTION__)
+#define chdir_ex(arglist...) except_wrapper(::chdir(arglist), -1, "chdir", __FILE__, __LINE__, __PRETTY_FUNCTION__)
 
 #define fopen_ex(arglist...) except_wrapper<FILE *>(::fopen(arglist), NULL, "fopen", __FILE__, __LINE__, __PRETTY_FUNCTION__)
 #define fclose_ex(arglist...) except_wrapper(::fclose(arglist), EOF, "fopen", __FILE__, __LINE__, __PRETTY_FUNCTION__)

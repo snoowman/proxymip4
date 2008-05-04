@@ -2,6 +2,7 @@
 #define PMIP_COMMON_HPP
 
 #include <asm/types.h>
+#include <signal.h>
 
 __u64 ntohll(__u64 ll);
 #define htonll ntohll
@@ -9,5 +10,6 @@ void randomize();
 int popen2_ex(char **cmd, int *rfd, int *wfd);
 void print_hex(char *buf, int len);
 char *parse_progname(char *path);
+void daemonize(char const* progname, sighandler_t handler);
 
 #endif

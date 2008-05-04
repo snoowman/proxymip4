@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/un.h>
+#include <syslog.h>
 #include <exception>
 #include <boost/lexical_cast.hpp>
 #include "common.hpp"
@@ -89,20 +90,33 @@ public:
   }
 };
 
+volatile int exiting = 0;
+
+void signal_handler(int signo)
+{
+  syslog(LOG_INFO, "received signal no: %d, stopping %s daemon", signo, progname);
+  closelog();
+  exiting = 1;
+}
+
 void pma_daemon()
 {
   try {
+    daemonize(progname, signal_handler);
+    openlog(progname, 0, LOG_DAEMON);
+
     pma_socket pmagent;
     pma_bcache bc;
     pma_unix un(PMA_SERVER_SOCK);
+    syslog(LOG_INFO, "started %s daemon\n", progname);
     
-    for(;;) 
+    while(!exiting)
     {
       pma_msg m;
       try 
       {
         m = un.recv();
-        printf("m.hoa %08x, m.lifetime %hu\n", m.hoa, m.lifetime);
+        syslog(LOG_INFO, "sending MIP4 RRQ for MN %08x with lifetime %hu\n", m.hoa, m.lifetime);
     
         struct mip_rrp p = pmagent.request(m.hoa, m.ha, m.coa, m.spi, m.lifetime);
         if (p.code == MIPCODE_ACCEPT) 
@@ -118,15 +132,17 @@ void pma_daemon()
       }
       catch (exception &e) 
       {
-        fprintf(stderr, "%s\n", e.what());
+        syslog(LOG_ERR, "error sending MIP4 RRQ: %s\n", e.what());
 	m.code = -1;
 	un.send(m);
       }
     }
+    syslog(LOG_INFO, "exited %s daemon gracefully\n", progname);
   }
   catch (exception &e) {
-    fprintf(stderr, "%s\n", e.what());
+    syslog(LOG_ERR, "error initializing daemon: %s\n", e.what());
   }
+  exit(0);
 }
 
 int main(int argc, char **argv)

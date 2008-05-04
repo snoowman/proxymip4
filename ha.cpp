@@ -18,7 +18,7 @@ using namespace bcache;
 
 char *progname;
 
-cache *pbc = NULL;
+ha_bcache *pbc = NULL;
 
 static void usage()
 {
@@ -60,7 +60,7 @@ int main(int argc, char** argv)
     printf("ha %s\n", homeif.addr().to_string());
     ha_socket hagent(homeif);
 
-    cache bc(homeif);
+    ha_bcache bc(homeif);
     pbc = &bc;
     signal(SIGUSR1, sigusr1);
 
@@ -69,14 +69,15 @@ int main(int argc, char** argv)
       in_address from;
 
       int errcode = hagent.recv(q, from);
-      if (errcode == rfc3344::MIPCODE_ACCEPT) {
-        if (q.lifetime == 0)
-          bc.deregister_binding(q.hoa);
-        else
-          bc.register_binding(q.hoa, q.ha, q.coa, q.lifetime);
-      }
-
       hagent.reply(errcode, q, from);
+
+      if (errcode != rfc3344::MIPCODE_ACCEPT)
+        continue;
+
+      if (q.lifetime == 0)
+        bc.deregister_binding(q.hoa);
+      else
+        bc.register_binding(q.hoa, q.ha, q.coa, q.auth.spi, q.lifetime);
     }
   }
   catch(exception &e) {

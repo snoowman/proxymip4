@@ -38,7 +38,7 @@ public:
 
   explicit in_address(in_addr_t addr, __u16 port = 0) {
     bzero(&sa_, sizeof(sa_));
-    sa_.sin_addr.s_addr = htonl(addr);
+    sa_.sin_addr.s_addr = addr;
     sa_.sin_port = htons(port);
   }
 

@@ -11,7 +11,7 @@ rtadv: rtadv.o common.o
 rtsol: rtsol.o common.o
 mipsa: mipsa.o common.o sadb.o
 ha: ha.o common.o sadb.o bcache.o network.o
-pma: pma.o common.o sadb.o network.o
+pma: pma.o common.o sadb.o bcache.o network.o
 
 clean:
 	rm -f *.o *.d $(PROGS) || true

@@ -26,7 +26,6 @@ public:
   void list_binding();
   void register_binding(in_addr_t hoa, in_addr_t ha, in_addr_t coa, __u32 spi, __u16 lifetime);
   bool deregister_binding(in_addr_t hoa);
-  void deregister_local(in_addr_t hoa, in_addr_t ha, in_addr_t coa);
 
 protected:
   virtual void register_binding_callback(in_addr_t hoa, in_addr_t ha, in_addr_t coa) = 0;

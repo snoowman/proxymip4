@@ -3,6 +3,7 @@
 
 #include <asm/types.h>
 #include <netinet/in.h>
+#include <strings.h>
 #include <map>
 #include <string>
 #include <stdexcept>
@@ -70,17 +71,20 @@ private:
     for (int i = 0; i < MAX_CLIENT; ++i) {
       if (rtable_pool_[i] == 0) {
         rtable_pool_[i] = 1;
-        return i;
+        return i + 1;
       }
     }
     throw no_rtable();
   }
 
   void free_rtable(int tab) {
-    rtable_pool_[tab] = 0;
+    rtable_pool_[tab - 1] = 0;
   }
 
 public:
+  pma_bcache() {
+    bzero(rtable_pool_, sizeof(rtable_pool_));
+  }
   void register_mif(in_addr_t hoa, char const* ifname) {
     miface_[hoa] = ifname;
   }

@@ -105,7 +105,7 @@ void pma_bcache::deregister_binding_callback(in_addr_t hoa, in_addr_t ha, in_add
     free_rtable(tab);
   }
 
-  if (ha_refcnt_[ha]++ == 0)
+  if (--ha_refcnt_[ha] == 0)
     release_tunnel(ha);
 }
 

@@ -28,11 +28,22 @@ static void usage()
   exit(-1);
 }
 
-static void sigusr1(int signo)
+volatile int exiting = 0;
+
+void signal_handler(int signo)
 {
-  if (pbc)
-    pbc->list_binding();
-  load_sadb();
+  switch (signo) {
+  case SIGUSR1:
+    if (pbc)
+      pbc->list_binding();
+    load_sadb();
+    break;
+
+  default:
+    syslog(LOG_INFO, "received signal no: %d, stopping %s daemon", signo, progname);
+    closelog();
+    exiting = 1;
+  }
 }
 
 int main(int argc, char** argv)
@@ -55,16 +66,28 @@ int main(int argc, char** argv)
     usage();
   
   try {
+    in_iface homeif(ifname);
+    ha_socket hagent(homeif);
+    ha_bcache bc(homeif);
+  }
+  catch(exception &e) {
+    fprintf(stderr, "%s\n", e.what());
+    return -1;
+  }
+
+  try {
+    daemonize(progname, signal_handler);
+    signal(SIGUSR1, signal_handler);
+    openlog(progname, 0, LOG_DAEMON);
 
     in_iface homeif(ifname);
-    printf("ha %s\n", homeif.addr().to_string());
-    ha_socket hagent(homeif);
+    syslog(LOG_INFO, "start %s daemon on HA address %s", progname, homeif.addr().to_string());
 
+    ha_socket hagent(homeif);
     ha_bcache bc(homeif);
     pbc = &bc;
-    signal(SIGUSR1, sigusr1);
 
-    for(;;) {
+    while(!exiting) {
       struct mip_rrq q;
       in_address from;
 
@@ -81,7 +104,7 @@ int main(int argc, char** argv)
     }
   }
   catch(exception &e) {
-    fprintf(stderr, "%s\n", e.what());
+    syslog(LOG_WARNING, "%s", e.what());
     return -1;
   }
 

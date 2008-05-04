@@ -534,6 +534,7 @@ public:
   pma_socket() {
     sadb::load_sadb();
     randomize();
+    mip_.reuse_addr();
   }
 
   struct mip_rrp request(in_addr_t hoa, in_addr_t ha, in_addr_t coa, __u32 spi, __u16 lifetime) {
@@ -543,7 +544,7 @@ public:
       throw sadb::invalid_spi();
 
     sockpp::in_address coa_port(coa);
-    mip_.bind(coa_port);
+    mip_.rebind(coa_port);
 
     struct mip_rrq q;
     create_rrq(&q, hoa, ha, coa, sa, lifetime);

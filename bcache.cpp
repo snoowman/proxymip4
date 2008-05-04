@@ -42,11 +42,6 @@ bool generic_bcache::deregister_binding(in_addr_t hoa)
   return true;
 }
 
-void generic_bcache::deregister_local(in_addr_t hoa, in_addr_t ha, in_addr_t coa)
-{
-  deregister_binding_callback(hoa, ha, coa);
-}
-
 void generic_bcache::list_binding()
 {
   printf("binding generic_bcache\n");

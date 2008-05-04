@@ -82,14 +82,33 @@ class in_iface;
 
 class in_socket : private boost::noncopyable {
   int sock_;
+  int type_;
+  int protocol_;
 
 public:
   in_socket(int type, int protocol = 0) {
-    sock_ = socket_ex(PF_INET, type, protocol);
+    type_ = type;
+    protocol_ = protocol;
+    sock_ = 0;
+    open();
   }
 
   ~in_socket() {
-    close_ex(sock_);
+    close();
+  }
+
+  void open() {
+    if (sock_)
+      close();
+    sock_ = socket_ex(PF_INET, type_, protocol_);
+
+  }
+
+  void close() {
+    if (sock_) {
+      close_ex(sock_);
+      sock_ = 0;
+    }
   }
 
   ssize_t send(void const *buf, size_t len) const {
@@ -108,7 +127,16 @@ public:
     return recvfrom_ex(sock_, buf, size, 0, addr.sa(), addr.sa_plen());
   }
 
+  void reuse_addr(int reuse = 1) {
+    setsockopt_ex(sock_, SOL_SOCKET, SO_REUSEADDR, (char *)&reuse, sizeof(int));
+  }
+
   void bind(in_address const& addr) const {
+    bind_ex(sock_, addr.sa(), addr.sa_len());
+  }
+
+  void rebind(in_address const& addr) {
+    open();
     bind_ex(sock_, addr.sa(), addr.sa_len());
   }
 

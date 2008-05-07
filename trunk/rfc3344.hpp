@@ -478,6 +478,10 @@ public:
     sadb::load_sadb();
   }
 
+  int select_read(struct timeval &tv) {
+    return mip_.select_read(tv);
+  }
+
   int recv(mip_rrq &q, sockpp::in_address &from) {
       size_t len = mip_.recvfrom((char *)&q, packet::MTU, from);
       return verify_rrq(q, len);

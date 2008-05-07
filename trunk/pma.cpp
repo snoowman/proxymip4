@@ -77,6 +77,15 @@ public:
     sendto_ex(fd_, &msg, sizeof(msg), 0, (struct sockaddr *)&remote_, sizeof(remote_));
   }
 
+  int select_read(timeval &tv) const {
+    fd_set rfds;
+
+    FD_ZERO(&rfds);
+    FD_SET(fd_, &rfds);
+
+    return select_ex(fd_ + 1, &rfds, NULL, NULL, &tv);
+  }
+
   pma_msg recv() {
     pma_msg msg;
     socklen_t len = sizeof(remote_);
@@ -95,7 +104,6 @@ volatile int exiting = 0;
 void signal_handler(int signo)
 {
   syslog(LOG_INFO, "received signal no: %d, stopping %s daemon", signo, progname);
-  closelog();
   exiting = 1;
 }
 
@@ -113,8 +121,19 @@ void pma_daemon()
     while(!exiting)
     {
       pma_msg m;
-      try 
-      {
+      try {
+        struct timeval tv;
+        tv.tv_sec = 1;
+        tv.tv_usec = 0;
+        if (un.select_read(tv) == 0)
+          continue;
+      }
+      catch (exception &e) {
+        syslog(LOG_ERR, "error: %s\n", e.what());
+	break;
+      }
+
+      try {
         m = un.recv();
         syslog(LOG_INFO, "sending MIP4 RRQ for MN %08x with lifetime %hu\n", m.hoa, m.lifetime);
     
@@ -130,18 +149,22 @@ void pma_daemon()
         m.code = p.code;
 	un.send(m);
       }
-      catch (exception &e) 
-      {
+      catch (exception &e) {
         syslog(LOG_ERR, "error sending MIP4 RRQ: %s\n", e.what());
 	m.code = -1;
 	un.send(m);
       }
     }
-    syslog(LOG_INFO, "exited %s daemon gracefully\n", progname);
   }
   catch (exception &e) {
     syslog(LOG_ERR, "error initializing daemon: %s\n", e.what());
   }
+
+  if (exiting == 0)
+    exit(-1);
+
+  syslog(LOG_INFO, "exited %s daemon gracefully\n", progname);
+  closelog();
   exit(0);
 }
 

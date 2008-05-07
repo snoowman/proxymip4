@@ -115,7 +115,7 @@ param
   in: TIF, tunnel if name
   in: TAB, route table id
 
-per PMA
+per HA
 ip tunnel add TIF mode ipip remote HA local COA
 ifconfig TIF 0.0.0.0 up
 ip route add default dev TIF table TAB

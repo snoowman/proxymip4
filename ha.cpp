@@ -41,7 +41,6 @@ void signal_handler(int signo)
 
   default:
     syslog(LOG_INFO, "received signal no: %d, stopping %s daemon", signo, progname);
-    closelog();
     exiting = 1;
   }
 }
@@ -88,6 +87,13 @@ int main(int argc, char** argv)
     pbc = &bc;
 
     while(!exiting) {
+      struct timeval tv;
+      tv.tv_sec = 1;
+      tv.tv_usec = 0;
+
+      if (hagent.select_read(tv) == 0)
+        continue;
+
       struct mip_rrq q;
       in_address from;
 
@@ -105,9 +111,13 @@ int main(int argc, char** argv)
   }
   catch(exception &e) {
     syslog(LOG_WARNING, "%s", e.what());
-    return -1;
   }
 
+  if (exiting == 0)
+    return -1;
+
+  syslog(LOG_INFO, "exited %s daemon gracefully", progname);
+  closelog();
   return 0;
 }
 

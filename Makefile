@@ -1,5 +1,5 @@
 CFLAGS  = -Wall
-LDFLAGS = -lstdc++
+LDFLAGS = -lstdc++ -lssl
 PROGS   = rtadv rtsol mipsa ha pma
 OBJS    = $(PROGS:=.o) common.o sadb.o bcache.o network.o
 

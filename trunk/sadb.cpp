@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <map>
+#include <openssl/hmac.h>
 #include "posixpp.hpp"
 #include "common.hpp"
 #include "sadb.hpp"
@@ -141,17 +142,29 @@ int scan_sa(FILE *fp, struct mipsa *sa)
   return 0;
 }
 
+int rfc2104_hmac(char const *mdname, char const *key, int klen, void const *m, int mlen, char *md, unsigned int max_md_len)
+{
+	static bool initialized = false;
+	if (!initialized) {
+		initialized = true;
+		OpenSSL_add_all_algorithms();
+	}
+
+	unsigned int ret = max_md_len;
+	EVP_MD const *alg = EVP_get_digestbyname(mdname);
+	if (!alg)
+		return 0; // should I throw?
+
+	HMAC(alg, key, klen, (unsigned char const *)m, mlen, (unsigned char *)md, &ret);
+	return ret;
+}
+
 int auth_by_sa(char *auth, void const *buf, ssize_t len, struct mipsa *sa)
 {
-  char *cmd[] = {"/usr/bin/openssl", (char*)sa->hmac.c_str(),  "-binary", NULL};;
-  int rfd, wfd;
-  popen2_ex(cmd, &rfd, &wfd);
-  write_ex(wfd, sa->secret.c_str(), sa->secret.length());
-  write_ex(wfd, buf, len);
-  close_ex(wfd);
-  int ret = read(rfd, auth, rfc3344::MIP_AUTH_MAX);
-  close_ex(rfd);
-  return ret;
+  char const *md = sa->hmac.c_str();
+  char const *pass = sa->secret.c_str();
+  int passlen = sa->secret.length();
+  return rfc2104_hmac(md, pass, passlen, buf, len, auth, MIP_AUTH_MAX);
 }
 
 int verify_by_sa(char const *old_auth, void const *buf, ssize_t len, struct mipsa *sa)

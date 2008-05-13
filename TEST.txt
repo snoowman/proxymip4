@@ -1,6 +1,82 @@
+--- New Topology ---
 
-    
-   
+192.168.100.254
+|
+|
+|
+192.168.100.1 ------ 192.168.100.2 ------ 192.168.100.3
+hagent               pmagent1             pmagent2
+192.168.101.1        0.0.0.0              0.0.0.0
+|                    |                    |
+|                    |                    |
+|                    |                    |
+  192.168.101.3
+  mnode
+|
+|
+|
+  192.168.101.2
+  hnode
+
+--- Hosts ---
+
+1. Scenario 1, mn switch home <-> pma1, cn is host
+
+hagent, pmagent1, mnode
+
+2. Scenario 2, mn switch home <-> pma1, cn is hnode
+
+hagent, pmagent1, mnode, hnode
+
+3. Scenario 3, mn switch pma1 <-> pma2, cn is host
+
+hagent, pmagent1, pmagent2, mnode
+
+4. Scenario 4, mn switch pma1 <-> pma2, cn is hnode
+
+hagent, pmagent1, pmagent2, mnode, hnode
+
+--- By Bridge ---
+
+xenbr0
+hagent, pmagent1, pmagent2
+
+xenbr1
+hagent, mnode, hnode
+
+xenbr2
+pmagent1
+
+xenbr3
+pmagent2
+
+--- By Host ---
+
+hagent
+ eth0 192.168.100.1 xenbr0
+ eth1 192.168.101.1 xenbr1
+
+pmagent1
+ eth0 192.168.100.2 xenbr0
+ eth1 0.0.0.0 xenbr2
+
+pmagent2
+ eth0 192.168.100.3 xenbr0
+ eth1 0.0.0.0 xenbr3
+
+hnode
+ eth0 192.168.101.2 xenbr1
+
+mnode
+ eth0 192.168.101.3 xenbr1
+
+--- Old to New Host Mapping ---
+hrouter -> hagent
+hagent -> hnode
+frouter -> pmagent1
+pmagent -> pmagent2
+
+--- Old Topology ---   
  
                       192.168.103.1 ------  192.168.103.2  ------  192.168.103.3
 104.254 ------  104.1 crouter               hrouter                frouter

@@ -64,6 +64,7 @@ public:
   std::map<std::string, int> mif_refcnt_;
   std::map<in_addr_t, std::string> miface_;
   std::map<in_addr_t, int> tunnel_tab_;
+  std::map<in_addr_t, in_addr_t> gateway_;
   int rtable_pool_[MAX_CLIENT];
 
 private:
@@ -85,8 +86,13 @@ public:
   pma_bcache() {
     bzero(rtable_pool_, sizeof(rtable_pool_));
   }
+
   void register_mif(in_addr_t hoa, char const* ifname) {
     miface_[hoa] = ifname;
+  }
+
+  void register_gateway(in_addr_t hoa, in_addr_t gw) {
+    gateway_[hoa] = gw;
   }
 
 protected:

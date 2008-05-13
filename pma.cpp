@@ -27,12 +27,13 @@ static void usage()
 {
   fprintf(stderr, "\
 Usage: %s -d\n\
-       %s -m <hoa> -c <coa> -h <ha> -s <spi> -i <if> -l <life> -f\n\
+       %s -m <hoa> -c <coa> -h <ha> -g <gw> -s <spi> -i <if> -l <life> -f\n\
   -d   start pma daemon\n\
   -m   register home address 'hoa'\n\
-  -r   remove socket file if needed\n\
   -c   using care-of address 'coa'\n\
   -h   register with home agent 'ha'\n\
+  -g   set gateway of mn to 'gw'\n\
+  -r   remove socket file if needed\n\
   -l   lifetime, default to 0xfffe\n\
   -i   link 'if' which mn reside\n\
   -s   spi index for regstration\n",
@@ -45,6 +46,7 @@ struct pma_msg {
   in_addr_t hoa;
   in_addr_t ha;
   in_addr_t coa;
+  in_addr_t gw;
   __u32 spi;
   __u16 lifetime;
   char ifname[10];
@@ -141,6 +143,10 @@ void pma_daemon()
         if (p.code == MIPCODE_ACCEPT) 
 	{
           bc.register_mif(m.hoa, m.ifname);
+          syslog(LOG_DEBUG, "register gateway %08x", m.gw);
+	  if (m.gw != 0)
+	    bc.register_gateway(m.hoa, m.gw);
+
           if (m.lifetime == 0) 
             bc.deregister_binding(m.hoa);
           else 
@@ -175,6 +181,7 @@ int main(int argc, char **argv)
   in_addr_t hoa = 0;
   in_addr_t ha = 0;
   in_addr_t coa = 0;
+  in_addr_t gw = 0;
   char *ifname = NULL;
   __u32 spi = 0;
   __u16 lifetime = 0xfffe;
@@ -183,7 +190,7 @@ int main(int argc, char **argv)
 
   try {
     char c;
-    while ((c = getopt(argc, argv, "h:m:c:s:l:i:dr")) != -1) {
+    while ((c = getopt(argc, argv, "h:m:c:g:s:l:i:dr")) != -1) {
       switch (c) {
       case 'h':
         ha = in_address(optarg).to_u32();
@@ -193,6 +200,9 @@ int main(int argc, char **argv)
         break;
       case 'c':
         coa = in_address(optarg).to_u32();
+        break;
+      case 'g':
+        gw = in_address(optarg).to_u32();
         break;
       case 'i':
         ifname = optarg;
@@ -241,6 +251,7 @@ int main(int argc, char **argv)
     m.ha = ha;
     m.hoa = hoa;
     m.coa = coa;
+    m.gw = gw;
     m.spi = spi;
     m.lifetime = lifetime;
     strncpy(m.ifname, ifname, 10);

@@ -63,12 +63,17 @@ void ha_bcache::register_binding_callback(in_addr_t hoa, in_addr_t ha, in_addr_t
 {
   if (coa_refcnt_[coa]++ == 0)
     create_tunnel(ha, coa);
+
   register_hoa(hoa, coa, hif_.name());
+  send_grat_arp(hif_.name(), hoa);
 }
 
 void ha_bcache::deregister_binding_callback(in_addr_t hoa, in_addr_t ha, in_addr_t coa)
 {
   deregister_hoa(hoa, coa, hif_.name());
+  // who sends grat arp for mn returning home? or no one?
+  send_grat_arp(hif_.name(), ha);
+
   if (--coa_refcnt_[coa] == 0)
     release_tunnel(coa);
 }
@@ -89,6 +94,10 @@ void pma_bcache::register_binding_callback(in_addr_t hoa, in_addr_t ha, in_addr_
 
   set_proxy_arp(ifname, 1);
   register_source_route(hoa, tab, ifname);
+
+  in_addr_t gw = gateway_[hoa];
+  if (gw != 0)
+    send_grat_arp(ifname, gw);
 }
 
 void pma_bcache::deregister_binding_callback(in_addr_t hoa, in_addr_t ha, in_addr_t coa)

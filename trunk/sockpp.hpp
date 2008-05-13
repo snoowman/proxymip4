@@ -239,6 +239,11 @@ public:
     }
     return length;
   }
+
+  int flags() const {
+    ioctl_ex2("get_ifflags", s_.sock(), SIOCGIFFLAGS, &ifr_);
+    return ifr_.ifr_flags;
+  }
 };
 
 inline void in_socket::bindif(in_iface const &ifa) const {

@@ -30,7 +30,6 @@ inline T except_wrapper(T ret, T val, char const *pre, char const *file, int lin
 
 #define socket_ex(arglist...) except_wrapper(::socket(arglist), -1, "socket", __FILE__, __LINE__, __PRETTY_FUNCTION__)
 #define close_ex(arglist...) except_wrapper(::close(arglist), -1, "close", __FILE__, __LINE__, __PRETTY_FUNCTION__)
-#define inet_aton_ex(arglist...) except_wrapper(::inet_aton(arglist), -1, "inet_aton", __FILE__, __LINE__, __PRETTY_FUNCTION__)
 #define send_ex(arglist...) except_wrapper(::send(arglist), -1, "send", __FILE__, __LINE__, __PRETTY_FUNCTION__)
 #define recv_ex(arglist...) except_wrapper(::recv(arglist), -1, "recv", __FILE__, __LINE__, __PRETTY_FUNCTION__)
 #define sendto_ex(arglist...) except_wrapper(::sendto(arglist), -1, "sendto", __FILE__, __LINE__, __PRETTY_FUNCTION__)
@@ -52,6 +51,8 @@ inline T except_wrapper(T ret, T val, char const *pre, char const *file, int lin
 #define setsid_ex(arglist...) except_wrapper(::setsid(arglist), -1, "setsid", __FILE__, __LINE__, __PRETTY_FUNCTION__)
 #define chdir_ex(arglist...) except_wrapper(::chdir(arglist), -1, "chdir", __FILE__, __LINE__, __PRETTY_FUNCTION__)
 #define getsockname_ex(arglist...) except_wrapper(::getsockname(arglist), -1, "getsockname", __FILE__, __LINE__, __PRETTY_FUNCTION__)
+
+#define inet_aton_ex(arglist...) except_wrapper(::inet_aton(arglist), 0, "inet_aton: Bad address, converstion not", __FILE__, __LINE__, __PRETTY_FUNCTION__)
 
 #define fopen_ex(arglist...) except_wrapper<FILE *>(::fopen(arglist), NULL, "fopen", __FILE__, __LINE__, __PRETTY_FUNCTION__)
 #define fclose_ex(arglist...) except_wrapper(::fclose(arglist), EOF, "fopen", __FILE__, __LINE__, __PRETTY_FUNCTION__)

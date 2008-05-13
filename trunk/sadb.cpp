@@ -26,7 +26,7 @@ void flush_sadb()
 
 void load_sadb()
 {
-  FILE *fp = fopen(MIPSADB_CONF, "r");
+  FILE *fp = fopen_ex(MIPSADB_CONF, "r");
   if (fp == NULL)
     return;
 
@@ -167,22 +167,10 @@ int auth_by_sa(char *auth, void const *buf, ssize_t len, struct mipsa *sa)
   return rfc2104_hmac(md, pass, passlen, buf, len, auth, MIP_AUTH_MAX);
 }
 
-void syslog_hex(char const *buf, int len)
-{
-  char msg[1024];
-  int i;
-  int pos = 0;
-  for (i = 0; i < len; ++i)
-    pos += sprintf(msg + pos, "%02hhx ", buf[i]);
-  syslog(LOG_DEBUG, msg);;
-}
-
 int verify_by_sa(char const *old_auth, void const *buf, ssize_t len, struct mipsa *sa)
 {
   char auth[MIP_AUTH_MAX];
   int authlen = auth_by_sa(auth, buf, len, sa);
-  syslog_hex(auth, authlen - 4);
-  syslog_hex(old_auth, authlen - 4);
   if (memcmp(auth, old_auth, authlen - 4) == 0)
     return 1;
   return 0;

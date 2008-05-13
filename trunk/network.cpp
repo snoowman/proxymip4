@@ -7,7 +7,12 @@
 #include <net/if.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <net/if_arp.h>
+#include <linux/if_packet.h>
+#include <linux/if_ether.h>
 #include "network.hpp"
+#include "posixpp.hpp"
+#include "sockpp.hpp"
 
 int my_system(char const *fmt, ...)
 {
@@ -129,5 +134,85 @@ int unregister_source_route(in_addr_t hoa, int tab, char const *mif)
 	my_system("ip route del %s/32 dev %s", mnaddr, mif);
 	my_system("ip rule del from %s/32 lookup %d", mnaddr, tab);
 	return 0;
+}
+
+void send_arp(int s, in_addr_t src, in_addr_t dst,
+        struct sockaddr_ll *llsrc, struct sockaddr_ll *lldst, bool reply)
+{
+  unsigned char buf[256];
+  struct arphdr *ah = (struct arphdr*)buf;
+  unsigned char *p = (unsigned char *)(ah+1);
+
+  ah->ar_hrd = htons(llsrc->sll_hatype);
+  if (ah->ar_hrd == htons(ARPHRD_FDDI))
+    ah->ar_hrd = htons(ARPHRD_ETHER);
+  ah->ar_pro = htons(ETH_P_IP);
+  ah->ar_hln = llsrc->sll_halen;
+  ah->ar_pln = 4;
+
+  short op = reply ? htons(ARPOP_REPLY) : htons(ARPOP_REQUEST);
+  ah->ar_op  = op;
+
+  memcpy(p, &llsrc->sll_addr, ah->ar_hln);
+  p+=llsrc->sll_halen;
+
+  memcpy(p, &src, 4);
+  p+=4;
+
+  if (reply)
+    memcpy(p, &llsrc->sll_addr, ah->ar_hln);
+  else
+    memcpy(p, &lldst->sll_addr, ah->ar_hln);
+  p+=ah->ar_hln;
+
+  memcpy(p, &dst, 4);
+  p+=4;
+
+  int i;
+  for (i = 0; i < 3; ++i) {
+    usleep(50000);
+    sendto_ex(s, buf, p-buf, 0, (struct sockaddr*)lldst, sizeof(*lldst));
+  }
+}
+
+void send_grat_arp(char const *device, in_addr_t ipaddr)
+{
+  syslog(LOG_DEBUG, "send grat_arp for %08x to link %s", ipaddr, device);
+  sockpp::in_iface ifa(device);
+  int ifindex = ifa.index();
+  int ifflags = ifa.flags();
+
+  if (!(ifflags & IFF_UP)) {
+    syslog(LOG_WARNING, "Interface \"%s\" is down", device);
+    syslog(LOG_WARNING, "failed sending gratitutous ARP");
+    return;
+  }
+  if (ifflags & (IFF_NOARP|IFF_LOOPBACK)) {
+    syslog(LOG_WARNING, "Interface \"%s\" is not ARPable", device);
+    syslog(LOG_WARNING, "failed sending gratitutous ARP");
+    return;
+  }
+
+  struct sockaddr_ll llsrc, lldst;
+  llsrc.sll_family = AF_PACKET;
+  llsrc.sll_ifindex = ifindex;
+  llsrc.sll_protocol = htons(ETH_P_ARP);
+
+  int s = socket_ex(PF_PACKET, SOCK_DGRAM, 0);
+  bind_ex(s, (struct sockaddr*)&llsrc, sizeof(llsrc));
+
+  socklen_t alen = sizeof(llsrc);
+  getsockname_ex(s, (struct sockaddr*)&llsrc, &alen);
+
+  if (llsrc.sll_halen == 0) {
+    syslog(LOG_WARNING, "Interface \"%s\" is not ARPable (no ll address)", device);
+    syslog(LOG_WARNING, "failed sending gratitutous ARP");
+    return;
+  }
+
+  lldst = llsrc;
+  memset(lldst.sll_addr, -1, lldst.sll_halen);
+  send_arp(s, ipaddr, ipaddr, &llsrc, &lldst, 0 /* not reply */);
+  close_ex(s);
 }
 

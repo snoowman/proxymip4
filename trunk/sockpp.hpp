@@ -22,7 +22,7 @@ public:
     bzero(&sa_, sizeof(sa_));
   }
 
-  explicit in_address(char *str, __u16 port = 0) {
+  explicit in_address(char const *str, __u16 port = 0) {
     bzero(&sa_, sizeof(sa_));
     inet_aton_ex(str, &sa_.sin_addr);
     sa_.sin_port = htons(port);
@@ -201,7 +201,7 @@ class in_iface {
   ifreq ifr_;
 
 public:
-  in_iface(char *ifname)
+  in_iface(char const *ifname)
   {
     bzero(&ifr_, sizeof(ifr_));
     strncpy(ifr_.ifr_name, ifname, IFNAMSIZ-1);

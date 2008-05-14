@@ -11,6 +11,7 @@
 #include "sadb.hpp"
 #include "sockpp.hpp"
 #include "bcache.hpp"
+#include "sadb.hpp"
 
 #define PMA_SERVER_SOCK "/var/run/proxymip4-pma.sock"
 #define PMA_CLIENT_SOCK "/tmp/proxymip4-pma-client.sock"
@@ -20,6 +21,7 @@ using namespace boost;
 using namespace rfc3344;
 using namespace bcache;
 using namespace sockpp;
+using namespace sadb;
 
 char *progname;
 
@@ -102,11 +104,22 @@ public:
 };
 
 volatile int exiting = 0;
+pma_bcache *pbc = NULL;
 
 void signal_handler(int signo)
 {
-  syslog(LOG_INFO, "received signal no: %d, stopping %s daemon", signo, progname);
-  exiting = 1;
+  switch(signo) {
+  case SIGUSR1:
+  case SIGHUP:
+    if (pbc)
+      pbc->list_binding();
+    load_sadb();
+    break;
+
+  default:
+    syslog(LOG_INFO, "received signal no: %d, stopping %s daemon", signo, progname);
+    exiting = 1;
+  }
 }
 
 void pma_daemon()
@@ -117,6 +130,7 @@ void pma_daemon()
 
     pma_socket pmagent;
     pma_bcache bc;
+    pbc = &bc;
     pma_unix un(PMA_SERVER_SOCK);
     syslog(LOG_INFO, "started %s daemon\n", progname);
     
@@ -257,6 +271,13 @@ int main(int argc, char **argv)
     strncpy(m.ifname, ifname, 10);
 
     un.send(m);
+
+    struct timeval tv;
+    tv.tv_sec = 10;
+    tv.tv_usec = 0;
+    if (un.select_read(tv) == 0)
+      throw packet::recv_timeout("receiving from UNIX socket");
+
     pma_msg n = un.recv();
     fprintf(stderr, "reply code = %d\n", n.code);
   }

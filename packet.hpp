@@ -15,6 +15,13 @@ public:
   { }
 };
 
+class recv_timeout : public std::runtime_error {
+public:
+  recv_timeout(std::string msg)
+    : runtime_error("timeout: " + msg)
+  { }
+};
+
 class invalid_length : public std::logic_error {
 public:
   invalid_length()

@@ -561,6 +561,12 @@ public:
     sockpp::in_address ha_port(ha, MIP_PORT);
     mip_.sendto((char *)&q, mip_msg_size(q), ha_port);
 
+    struct timeval timeout;
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+    if (mip_.select_read(timeout) == 0)
+      throw packet::recv_timeout("receiving MIP4 RRP");
+
     struct mip_rrp p;
     size_t len = mip_.recv((char *)&p, sizeof(p));
     verify_rrp(p, len, q);

@@ -8,8 +8,7 @@
 #include "common.hpp"
 #include "sadb.hpp"
 #include "rfc3344.hpp"
-
-#define MIPSADB_CONF "/etc/mip_sadb.conf"
+#include "config.hpp"
 
 using namespace std;
 using namespace rfc3344;
@@ -26,7 +25,7 @@ void flush_sadb()
 
 void load_sadb()
 {
-  FILE *fp = fopen_ex(MIPSADB_CONF, "r");
+  FILE *fp = fopen(MIPSADB_CONF, "r");
   if (fp == NULL)
     return;
 

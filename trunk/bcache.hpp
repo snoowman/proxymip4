@@ -21,10 +21,19 @@ struct binding {
 
 class generic_bcache {
   std::map<in_addr_t, binding> bindings_;
+  static generic_bcache *singleton;
 
 public:
-  virtual ~generic_bcache() {};
-  void list_binding();
+  generic_bcache() {
+    if (singleton == 0)
+      singleton = this;
+  }
+
+  virtual ~generic_bcache() {
+    singleton = 0;
+  };
+
+  static void list_binding(char const *pname);
   void register_binding(in_addr_t hoa, in_addr_t ha, in_addr_t coa, __u32 spi, __u16 lifetime);
   bool deregister_binding(in_addr_t hoa);
 

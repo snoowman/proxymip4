@@ -12,9 +12,7 @@
 #include "sockpp.hpp"
 #include "bcache.hpp"
 #include "sadb.hpp"
-
-#define PMA_SERVER_SOCK "/var/run/proxymip4-pma.sock"
-#define PMA_CLIENT_SOCK "/tmp/proxymip4-pma-client.sock"
+#include "config.hpp"
 
 using namespace std;
 using namespace boost;
@@ -23,7 +21,7 @@ using namespace bcache;
 using namespace sockpp;
 using namespace sadb;
 
-char *progname;
+static char const *progname;
 
 static void usage()
 {
@@ -103,50 +101,60 @@ public:
   }
 };
 
-volatile int exiting = 0;
-pma_bcache *pbc = NULL;
 
-void signal_handler(int signo)
+int handle_signal(volatile int *psigno)
 {
-  switch(signo) {
+  int exiting = 0;
+
+  switch(*psigno) {
+  case 0:
+    return exiting;
+
   case SIGUSR1:
+    bcache::generic_bcache::list_binding(progname);
+    break;
+
   case SIGHUP:
-    if (pbc)
-      pbc->list_binding();
-    load_sadb();
+    sadb::load_sadb();
     break;
 
   default:
-    syslog(LOG_INFO, "received signal no: %d, stopping %s daemon", signo, progname);
+    syslog(LOG_INFO, "received signal no: %d, stopping %s daemon", *psigno, progname);
     exiting = 1;
   }
+
+  *psigno = 0;
+  return exiting;
 }
 
 void pma_daemon()
 {
   try {
-    daemonize(progname, signal_handler);
-    openlog(progname, 0, LOG_DAEMON);
+    volatile int signo = 0;
+    daemonize(progname, &signo);
 
     pma_socket pmagent;
     pma_bcache bc;
-    pbc = &bc;
     pma_unix un(PMA_SERVER_SOCK);
     syslog(LOG_INFO, "started %s daemon\n", progname);
     
-    while(!exiting)
+    while(1)
     {
+      if (handle_signal(&signo)) // should we exit?
+        break;
+
       pma_msg m;
+      struct timeval tv;
+      tv.tv_sec = 1;
+      tv.tv_usec = 0;
+
       try {
-        struct timeval tv;
-        tv.tv_sec = 1;
-        tv.tv_usec = 0;
         if (un.select_read(tv) == 0)
           continue;
       }
       catch (exception &e) {
-        syslog(LOG_ERR, "error: %s\n", e.what());
-	break;
+        syslog(LOG_WARNING, "error ignored: %s\n", e.what());
+	continue;
       }
 
       try {
@@ -178,10 +186,9 @@ void pma_daemon()
   }
   catch (exception &e) {
     syslog(LOG_ERR, "error initializing daemon: %s\n", e.what());
-  }
-
-  if (exiting == 0)
+    closelog();
     exit(-1);
+  }
 
   syslog(LOG_INFO, "exited %s daemon gracefully\n", progname);
   closelog();

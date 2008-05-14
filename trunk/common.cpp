@@ -3,11 +3,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <syslog.h>
 #include <time.h>
 #include <unistd.h>
 #include <arpa/inet.h>
 #include "common.hpp"
 #include "posixpp.hpp"
+#include "config.hpp"
 
 void randomize()
 {
@@ -85,10 +87,17 @@ char *parse_progname(char *path)
   return path;
 }
 
-void daemonize(char const *progname, sighandler_t handler)
+static volatile int *signal_number = 0;
+void signal_cb(int signo);
+
+void daemonize(char const *progname, volatile int *psigno)
 {
   if (getppid_ex() == 1)
   	return;
+
+  signal_number = psigno;
+
+  openlog(progname, 0, LOG_DAEMON);
 
   // setup signal
   signal(SIGTSTP, SIG_IGN);
@@ -102,8 +111,16 @@ void daemonize(char const *progname, sighandler_t handler)
   setsid_ex();
 
   pid_t pid2 = fork_ex();
-  if (pid2)
+  if (pid2) { // write child's pid before exit
+    char fn[1024];
+    snprintf(fn, 1024, DAEMON_PID_FMT, progname);
+
+    FILE *fp = fopen_ex(fn, "w");
+    fprintf(fp, "%d\n", pid2);
+    fclose_ex(fp);
+
     exit(0);
+  }
 
   chdir_ex("/tmp");
   umask(0);
@@ -113,9 +130,14 @@ void daemonize(char const *progname, sighandler_t handler)
   close_ex(STDERR_FILENO);
 
   //signal(SIGCHLD, SIG_IGN);
-  signal(SIGHUP, handler);
-  signal(SIGUSR1, handler);
-  signal(SIGINT, handler);
-  signal(SIGQUIT, handler);
-  signal(SIGTERM, handler);
+  signal(SIGHUP, signal_cb);
+  signal(SIGUSR1, signal_cb);
+  signal(SIGINT, signal_cb);
+  signal(SIGQUIT, signal_cb);
+  signal(SIGTERM, signal_cb);
+}
+
+void signal_cb(int signo)
+{
+  *signal_number = signo;
 }

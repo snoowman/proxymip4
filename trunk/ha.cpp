@@ -16,9 +16,7 @@ using namespace rfc3344;
 using namespace sadb;
 using namespace bcache;
 
-char *progname;
-
-ha_bcache *pbc = NULL;
+static char const *progname;
 
 static void usage()
 {
@@ -28,22 +26,29 @@ static void usage()
   exit(-1);
 }
 
-volatile int exiting = 0;
-
-void signal_handler(int signo)
+int handle_signal(volatile int *psigno)
 {
-  switch (signo) {
+  int exiting = 0;
+
+  switch(*psigno) {
+  case 0:
+    break;
+
   case SIGUSR1:
+    bcache::generic_bcache::list_binding(progname);
+    break;
+
   case SIGHUP:
-    if (pbc)
-      pbc->list_binding();
-    load_sadb();
+    sadb::load_sadb();
     break;
 
   default:
-    syslog(LOG_INFO, "received signal no: %d, stopping %s daemon", signo, progname);
+    syslog(LOG_INFO, "received signal no: %d, stopping %s daemon", *psigno, progname);
     exiting = 1;
   }
+
+  *psigno = 0;
+  return exiting;
 }
 
 int main(int argc, char** argv)
@@ -76,24 +81,31 @@ int main(int argc, char** argv)
   }
 
   try {
-    daemonize(progname, signal_handler);
-    signal(SIGUSR1, signal_handler);
-    openlog(progname, 0, LOG_DAEMON);
+    volatile int signo = 0;
+    daemonize(progname, &signo);
 
     in_iface homeif(ifname);
     syslog(LOG_INFO, "start %s daemon on HA address %s", progname, homeif.addr().to_string());
 
     ha_socket hagent(homeif);
     ha_bcache bc(homeif);
-    pbc = &bc;
 
-    while(!exiting) {
+    while(1) {
+      if (handle_signal(&signo))
+        break;
+
       struct timeval tv;
       tv.tv_sec = 1;
       tv.tv_usec = 0;
 
-      if (hagent.select_read(tv) == 0)
-        continue;
+      try {
+        if (hagent.select_read(tv) == 0)
+          continue;
+      }
+      catch (exception &e) {
+        syslog(LOG_WARNING, "error ignored: %s", e.what());
+	continue;
+      }
 
       struct mip_rrq q;
       in_address from;
@@ -111,11 +123,10 @@ int main(int argc, char** argv)
     }
   }
   catch(exception &e) {
-    syslog(LOG_WARNING, "%s", e.what());
-  }
-
-  if (exiting == 0)
+    syslog(LOG_ERR, "%s", e.what());
+    closelog();
     return -1;
+  }
 
   syslog(LOG_INFO, "exited %s daemon gracefully", progname);
   closelog();

@@ -6,8 +6,12 @@
 #include <string>
 #include "network.hpp"
 #include "bcache.hpp"
+#include "config.hpp"
+#include "sockpp.hpp"
 
 namespace bcache {
+
+generic_bcache *generic_bcache::singleton;
 
 void generic_bcache::register_binding(in_addr_t hoa, in_addr_t ha, in_addr_t coa, __u32 spi, __u16 lifetime)
 {
@@ -42,21 +46,33 @@ bool generic_bcache::deregister_binding(in_addr_t hoa)
   return true;
 }
 
-void generic_bcache::list_binding()
+void generic_bcache::list_binding(char const *pname)
 {
-  printf("binding generic_bcache\n");
+  generic_bcache *me = generic_bcache::singleton;
+  if (me == 0)
+    return;
+
+  char fn[1024];
+  snprintf(fn, 1024, BCACHE_FILE_FMT, pname);
+  FILE *fp = fopen(fn, "w");
+  if (fp == NULL)
+    return;
+
+  fprintf(fp, "Home Addr       Home Agent      Care-of Addr    Lifetime    \n");
 
   std::map<in_addr_t, binding>::iterator i;
-  for(i = bindings_.begin(); i != bindings_.end(); ++i) {
+  for(i = me->bindings_.begin(); i != me->bindings_.end(); ++i) {
     binding const& b = i->second;
-    printf("  hoa:%08x ha:%08x coa:%08x life: ", b.hoa, b.ha, b.coa);
+    fprintf(fp, "%-16s", sockpp::in_address(b.hoa).to_string());
+    fprintf(fp, "%-16s", sockpp::in_address(b.ha).to_string());
+    fprintf(fp, "%-16s", sockpp::in_address(b.coa).to_string());
 
     if (b.timeout == 0)
-      printf("infinite\n");
+      fprintf(fp, "infinite\n");
     else
-      printf("%lu (s)\n", b.timeout - time(NULL));
+      fprintf(fp, "%lu (s)\n", b.timeout - time(NULL));
   }
-  printf("\n");
+  fclose(fp);
 }
 
 void ha_bcache::register_binding_callback(in_addr_t hoa, in_addr_t ha, in_addr_t coa)
@@ -80,7 +96,6 @@ void ha_bcache::deregister_binding_callback(in_addr_t hoa, in_addr_t ha, in_addr
 
 void pma_bcache::register_binding_callback(in_addr_t hoa, in_addr_t ha, in_addr_t coa)
 {
-  printf("reg\n");
   char const *ifname = miface_[hoa].c_str();
 
   if (ha_refcnt_[ha]++ == 0)
@@ -102,7 +117,6 @@ void pma_bcache::register_binding_callback(in_addr_t hoa, in_addr_t ha, in_addr_
 
 void pma_bcache::deregister_binding_callback(in_addr_t hoa, in_addr_t ha, in_addr_t coa)
 {
-  printf("dereg\n");
   char const *ifname = miface_[hoa].c_str();
 
   int &tab = tunnel_tab_[ha];
@@ -118,4 +132,4 @@ void pma_bcache::deregister_binding_callback(in_addr_t hoa, in_addr_t ha, in_add
     release_tunnel(ha);
 }
 
-} // namespace bgeneric_bcache
+} // namespace bcache

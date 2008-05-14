@@ -42,7 +42,7 @@ public:
     sa_.sin_port = htons(port);
   }
 
-  char *to_string() const {
+  char const *to_string() const {
     return inet_ntoa(sa_.sin_addr);
   }
 

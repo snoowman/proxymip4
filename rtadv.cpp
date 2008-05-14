@@ -32,7 +32,7 @@ void signal_handler(int signo)
 {
   syslog(LOG_INFO, "stopped %s daemon on receiving signal no: %d", progname, signo);
   closelog();
-  exit(0);
+  exit(-1);
 }
 
 int main(int argc, char** argv)
@@ -79,8 +79,10 @@ int main(int argc, char** argv)
     in_iface ifa(ifname);
     rtadv_socket rtadv(ifa, router_vars);
 
-    daemonize(progname, signal_handler);
-    openlog(progname, 0, LOG_DAEMON);
+    volatile int signo;
+    daemonize(progname, &signo);
+    // overwrite default signal_handler
+    signal(SIGTERM, signal_handler);
 
     syslog(LOG_INFO, "rf1256 variable MaxAdvInterval = %d", router_vars.max_adv());
     syslog(LOG_INFO, "rf1256 variable MinAdvInterval = %d", router_vars.min_adv());

@@ -114,6 +114,7 @@ void daemonize(char const *progname, sighandler_t handler)
 
   //signal(SIGCHLD, SIG_IGN);
   signal(SIGHUP, handler);
+  signal(SIGUSR1, handler);
   signal(SIGINT, handler);
   signal(SIGQUIT, handler);
   signal(SIGTERM, handler);

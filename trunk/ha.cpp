@@ -34,6 +34,7 @@ void signal_handler(int signo)
 {
   switch (signo) {
   case SIGUSR1:
+  case SIGHUP:
     if (pbc)
       pbc->list_binding();
     load_sadb();

@@ -17,7 +17,7 @@ int main(int argc, char **argv)
   std::string target = std::string(argv[1]) + ":";
   unsigned int interval = boost::lexical_cast<unsigned int>(argv[2]);
 
-  unsigned long long orx = 0LLU, otx = 0LLU;
+  unsigned int orx = 0u, otx = 0u;
   while (1) {
     struct timeval tv;
     gettimeofday(&tv, NULL);
@@ -27,14 +27,14 @@ int main(int argc, char **argv)
       std::string str;
       ifs >> str;
       if (str.substr(0, target.length()) == target) {
-        unsigned long long rx, tx, unused;
+        unsigned int rx, tx, unused;
 	if (str.length() > target.length()) 
-	  rx = boost::lexical_cast<unsigned long long>(str.substr(target.length()));
+	  rx = boost::lexical_cast<unsigned int>(str.substr(target.length()));
 	else
           ifs >> rx;
         ifs >> unused >> unused >> unused >> unused >> unused >> unused >> unused;
         ifs >> tx;
-        printf("%llu %llu\n", rx - orx, tx - otx);
+        printf("%u %u\n", rx - orx, tx - otx);
         fflush(stdout);
 	orx = rx;
 	otx = tx;

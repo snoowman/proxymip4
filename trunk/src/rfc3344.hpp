@@ -83,10 +83,26 @@ struct mip_auth {
   __u32 spi;
 } __attribute__((packed));
 
+/*
+ * nonskip extension defined in pmip4 draft is kind of stupid
+ * so I decide to change it to a non-stupid version
+ */
+
+/* this is draft version */
+#if 0
 struct pmip_nonskip {
   __u8  type;
   __u8  subtype;
   __u16 length;
+  __u8  method;
+} __attribute__((packed));
+#endif
+
+/* non-draft version */
+struct pmip_nonskip {
+  __u8  type;
+  __u8  length;
+  __u8  subtype;
   __u8  method;
 } __attribute__((packed));
 

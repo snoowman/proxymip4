@@ -64,8 +64,14 @@ private:
     struct pmip_nonskip *nonskip = (struct pmip_nonskip *)p;
     nonskip->type    = MIPEXT_PMIPNOSK;
     nonskip->subtype = PMIPNOSK_AUTH;
-    nonskip->length  = htons(1);
     nonskip->method  = PMIPAUTH_FAHA;
+
+    /*
+     * in pmip4 draft version, length are u16, so the following line would be
+     *   nonskip->length  = htons(1);
+     * but I decide to use u8 instead, bit me
+     */
+    nonskip->length  = 1;
     p += sizeof(*nonskip);
 
     /* add FA HA auth*/
@@ -168,7 +174,13 @@ private:
         {
           struct pmip_nonskip *nonskip = (struct pmip_nonskip *)p;
           p += sizeof(*nonskip);
-          p += ntohs(nonskip->length) - 1;
+
+          /*
+           * in pmip4 draft version, length are u16, so the following line would be
+           *   p += ntohs(nonskip->length) - 1;
+           * but I decide to use u8 instead, bit me
+           */
+          p += nonskip->length - 1;
   
           if (nonskip->subtype != PMIPNOSK_AUTH) {
             throw packet::bad_packet("unknown non-skippable subtype");

@@ -109,15 +109,15 @@ public:
       int i;
       struct icmp_ra_addr *pa = &p->icmp_radv;
       if (len > 8 + p->icmp_num_addrs * p->icmp_wpa * 4) {
-        ra_ext_hdr *ext = (ra_ext_hdr *)(buf + 28 + p->icmp_num_addrs * p->icmp_wpa * 4);
-        if (ext->type == RA_EXTTYPE_MOBIAGENT) {
+        raext_hdr *ext = (raext_hdr *)(buf + 28 + p->icmp_num_addrs * p->icmp_wpa * 4);
+        if (ext->type == RAEXT_MOBIAGENT) {
           printf("mobile agent advertisement extension\n");
-          ra_ext_magent_adv *madv = (ra_ext_magent_adv *)((char *)ext + sizeof(*ext));
+          raext_madv *madv = (raext_madv *)((char *)ext + sizeof(*ext));
           printf("    seq %hu, lifetime %hu, flags %hhu\n", 
             ntohs(madv->sequence), ntohs(madv->lifetime), madv->flags);
         }
-        ra_ext_hdr *ext2 = (ra_ext_hdr *)((char *)ext + sizeof(*ext) + ext->length);
-        if (ext2->type == RA_EXTTYPE_PREFLEN) {
+        raext_hdr *ext2 = (raext_hdr *)((char *)ext + sizeof(*ext) + ext->length);
+        if (ext2->type == RAEXT_PREFLEN) {
           __u8 *prefix = (__u8 *)((char *)ext2 + 2);
           for (i = 0; i < p->icmp_num_addrs; ++i) {
             in_addr tmp;

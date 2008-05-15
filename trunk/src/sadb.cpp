@@ -158,29 +158,36 @@ int rfc2104_hmac(char const *mdname, char const *key, int klen, void const *m, i
 	return ret;
 }
 
-int auth_by_sa(char *auth, void const *buf, ssize_t len, struct mipsa *sa)
+int sa_auth(char *auth, int authlen, void const *buf, ssize_t len, struct mipsa *sa)
 {
   char const *md = sa->hmac.c_str();
   char const *pass = sa->secret.c_str();
   int passlen = sa->secret.length();
-  return rfc2104_hmac(md, pass, passlen, buf, len, auth, MIP_AUTH_MAX);
+  return rfc2104_hmac(md, pass, passlen, buf, len, auth, authlen);
 }
 
-int verify_by_sa(char const *old_auth, void const *buf, ssize_t len, struct mipsa *sa)
+int sa_verify(char const *old_auth, int old_authlen, void const *buf, ssize_t len, struct mipsa *sa)
 {
-  char auth[MIP_AUTH_MAX];
-  int authlen = auth_by_sa(auth, buf, len, sa);
+  const int MAX_AUTH = 100;
+  char auth[MAX_AUTH];
+
+  int authlen = sa_auth(auth, MAX_AUTH, buf, len, sa);
+  if (authlen != old_authlen)
+    return 0;
+
   if (memcmp(auth, old_auth, authlen - 4) == 0)
     return 1;
   return 0;
 }
 
-ssize_t authlen_by_sa(struct mipsa *sa)
+ssize_t sa_authlen(struct mipsa *sa)
 {
-  char auth[MIP_AUTH_MAX];
+  const int MAX_AUTH = 100;
+  char auth[MAX_AUTH];
+
   char c = 0;
-  ssize_t ret = auth_by_sa(auth, &c, sizeof(c), sa);
-  return ret + 4;
+  ssize_t ret = sa_auth(auth, MAX_AUTH, &c, sizeof(c), sa);
+  return ret;
 }
 
 } // namespace sadb

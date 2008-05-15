@@ -13,7 +13,7 @@ namespace bcache {
 
 generic_bcache *generic_bcache::singleton;
 
-void generic_bcache::register_binding(in_addr_t hoa, in_addr_t ha, in_addr_t coa, __u32 spi, __u16 lifetime)
+void generic_bcache::register_binding(in_addr_t hoa, in_addr_t ha, in_addr_t coa, __u16 lifetime)
 {
   deregister_binding(hoa);
 
@@ -22,7 +22,6 @@ void generic_bcache::register_binding(in_addr_t hoa, in_addr_t ha, in_addr_t coa
   b.hoa = hoa;
   b.ha = ha;
   b.coa = coa;
-  b.spi = spi;
 
   if (lifetime == 0xffff)
     b.timeout = 0;
@@ -81,14 +80,14 @@ void ha_bcache::register_binding_callback(in_addr_t hoa, in_addr_t ha, in_addr_t
     create_tunnel(ha, coa);
 
   register_hoa(hoa, coa, hif_.name());
-  send_grat_arp(hif_.name(), hoa);
+  send_grat_arp(hif_.name(), &hoa, 1);
 }
 
 void ha_bcache::deregister_binding_callback(in_addr_t hoa, in_addr_t ha, in_addr_t coa)
 {
   deregister_hoa(hoa, coa, hif_.name());
   // who sends grat arp for mn returning home? or no one?
-  send_grat_arp(hif_.name(), ha);
+  send_grat_arp(hif_.name(), &ha, 1);
 
   if (--coa_refcnt_[coa] == 0)
     release_tunnel(coa);
@@ -110,9 +109,8 @@ void pma_bcache::register_binding_callback(in_addr_t hoa, in_addr_t ha, in_addr_
   set_proxy_arp(ifname, 1);
   register_source_route(hoa, tab, ifname);
 
-  in_addr_t gw = gateway_[hoa];
-  if (gw != 0)
-    send_grat_arp(ifname, gw);
+  /* this would be where ARP are sent to HOME CN */
+  send_grat_arp(ifname, homecn_, num_homecn_);
 }
 
 void pma_bcache::deregister_binding_callback(in_addr_t hoa, in_addr_t ha, in_addr_t coa)

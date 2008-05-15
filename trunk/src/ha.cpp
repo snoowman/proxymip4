@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <syslog.h>
 #include <exception>
+#include <fstream>
+#include <sstream>
 #include "common.hpp"
 #include "rfc3344.hpp"
 #include "sadb.hpp"
@@ -11,11 +13,23 @@
 #include "bcache.hpp"
 #include "packet.hpp"
 
+#define PROC_NET_ARP "/proc/net/arp"
+
 using namespace std;
 using namespace sockpp;
 using namespace rfc3344;
 using namespace sadb;
 using namespace bcache;
+
+struct request_info {
+  int errcode;
+  __u16 lifetime;
+  in_addr_t hoa;
+  in_addr_t ha;
+  in_addr_t coa;
+  __u32 spi;
+  __u64 id;
+};
 
 class ha_socket {
   sockpp::udp_socket mip_;
@@ -23,101 +37,251 @@ class ha_socket {
   std::map<__u32, __u64> lastid_;
 
 private:
-  struct mip_rrp create_rrp(struct mip_rrq const &q, int errcode)
+  /*
+   * Get IP Address of Home Correspondent Node
+   */
+  int load_homecn(in_addr_t *addrs, char const* homeif)
   {
-    struct mip_rrp p;
-    bzero((char *) &p, sizeof(p));
-
-    p.type = MIPTYPE_REPLY;
-    p.code = errcode;
-    p.lifetime = q.lifetime;
-    p.hoa = q.hoa;
-    p.ha = q.ha;
-    p.id = q.id;
+    std::ifstream arpf(PROC_NET_ARP);
+    std::string line;
   
-    sadb::mipsa *sa = sadb::find_sa(ntohl(q.auth.spi));
+    // ignore first line
+    std::getline(arpf, line);
   
-    p.auth.type = MIP_EXTTYPE_AUTH;
-    p.auth.spi = q.auth.spi;
-    if (sa) {
-      p.auth.length = authlen_by_sa(sa);
-      auth_by_sa(p.auth.auth, &p, mip_msg_authsize(p), sa);
+    int count = 0;
+    while (arpf && count != HOMECN_MAX) {
+      std::getline(arpf, line);
+      if (!line.length())
+        break;
+  
+      std::stringstream ss(line);
+      std::string ip, unused, iface;
+      ss >> ip >> unused >> unused >> unused >> unused >> iface;
+  
+      if (iface == homeif) {
+        sockpp::in_address addr(ip.c_str());
+        addrs[count++] = addr.to_u32();
+      }
     }
-    else {
-      p.auth.length = q.auth.length;
-    }
-    return p;
+    return count;
   }
 
-  int verify_rrq(struct mip_rrq &q, size_t len)
+  int create_reply(char *buf, int buflen, request_info const &info)
   {
-    if (q.type != MIPTYPE_REQUEST) {
-      syslog(LOG_WARNING, "incorrect MIP type value %d\n", q.type);
-      return MIPCODE_BAD_FORMAT;
-    }
-  
-    if (len > sizeof(q) || len < mip_msg_authsize(q)) {
-      syslog(LOG_WARNING, "incorrect packet length %d\n", len);
-      return MIPCODE_BAD_FORMAT;
-    }
+    bzero(buf, buflen);
+    char *p = buf;
 
-    if (len != mip_msg_size(q)) {
-      syslog(LOG_WARNING, "incorrect packet length %d\n", len);
-      return MIPCODE_BAD_FORMAT;
-    }
+    /* fill MIP4 header fields */
+    struct mipreply_hdr *rep = (struct mipreply_hdr *)p;
+    rep->type     = MIPTYPE_REPLY;
+    rep->code     = info.errcode;
+    rep->lifetime = info.lifetime;
+    rep->hoa      = info.hoa;
+    rep->ha       = info.ha;
+    rep->id       = info.id;
+    p += sizeof(*rep);
   
-    if (q.ha != homeif_.addr().to_u32()) {
-      syslog(LOG_WARNING, "incorrect home agent address %08x\n", q.ha);
-      return MIPCODE_BAD_HA;
-    }
-  
-    sadb::mipsa *sa = sadb::find_sa(ntohl(q.auth.spi));
+    /* add PMIP4 per-node auth extension */
+    struct pmip_nonskip *nonskip = (struct pmip_nonskip *)p;
+    nonskip->type    = MIPEXT_PMIPNOSK;
+    nonskip->subtype = PMIPNOSK_AUTH;
+    nonskip->length  = htons(1);
+    nonskip->method  = PMIPAUTH_FAHA;
+    p += sizeof(*nonskip);
+
+    /* add VM home correspondent nodes externsion */
+    struct pmip_skip *skip = (struct pmip_skip *)p;
+    skip->type = MIPEXT_PMIPSKIP;
+    skip->subtype = PMIPSKIP_HOMECN;
+    p += sizeof(*skip);
+
+    in_addr_t *homecn = (in_addr_t *)p;
+    int num_addr = load_homecn(homecn, homeif_.name());
+    skip->length  = 1 + 4 * num_addr;
+    p += 4 * num_addr;
+
+    /* add FA HA auth*/
+    struct mip_auth *auth = (struct mip_auth *)p;
+    auth->type = MIPEXT_FHAUTH;
+    auth->spi = info.spi;
+    auth->length = 4;
+    p += sizeof(*auth);
+
+    sadb::mipsa *sa = sadb::find_sa(ntohl(info.spi));
     if (!sa) {
-      syslog(LOG_WARNING, "incorrect spi %u\n", ntohl(q.auth.spi));
-      return MIPCODE_BAD_AUTH;
+      if (p - buf > buflen)
+        throw packet::invalid_length();
+      return p - buf;
     }
-  
-    int authlen = authlen_by_sa(sa);
-    if (authlen != q.auth.length) {
-      syslog(LOG_WARNING, "incorrect auth length %d", authlen);
-      return MIPCODE_BAD_FORMAT;
-    }
-  
-    if (!verify_by_sa(q.auth.auth, &q, mip_msg_authsize(q), sa)) {
-      syslog(LOG_WARNING, "mobile node failed authentication\n");
-      return MIPCODE_BAD_AUTH;
+    int authlen = sa_authlen(sa);
+    auth->length += authlen;
+    sa_auth(p, authlen, buf, p - buf, sa);
+    p += authlen;
+
+    if (p - buf > buflen)
+      throw packet::invalid_length();
+    return p - buf;
+  }
+
+  int auth_request(char const *auth, int authlen, char const *buf, int len, request_info &info)
+  {
+    sadb::mipsa *sa = sadb::find_sa(ntohl(info.spi));
+    if (!sa) {
+      syslog(LOG_WARNING, "incorrect spi %u\n", ntohl(info.spi));
+      return MIPCODE_MNAUTH;
     }
 
-    __u64 id = ntohll(q.id);
+    if (authlen != sa_authlen(sa)) {
+      syslog(LOG_WARNING, "incorrect auth length %d", authlen);
+      return MIPCODE_FORMAT;
+    }
+
+    if (!sa_verify(auth, authlen, buf, len, sa)) {
+      syslog(LOG_WARNING, "mobile node failed authentication\n");
+      return MIPCODE_MNAUTH;
+    }
+
+    __u64 id = ntohll(info.id);
     __u64 t1 = id >> 32;
     __u64 t2 = time_stamp() >> 32;
     
     if (abs((long)t1 - (long)t2) > (long)sa->delay) {
       syslog(LOG_WARNING, "time not synchronized\n");
 
-      // reset q id to home agent's time
-      id &= (1LLU << 32) - 1;
-      id |= t2 << 32;
-      q.id = htonll(id);
-      return MIPCODE_BAD_ID;
+      // reset id to home agent's time
+      id           &= (1LLU << 32) - 1;
+      id           |= t2 << 32;
+      info.id       = htonll(id);
+      return MIPCODE_ID;
     }
 
-    if (lastid_[q.hoa] == 0) {
-      lastid_[q.hoa] = id;
+    if (lastid_[info.hoa] == 0) {
+      lastid_[info.hoa] = id;
     }
-    else if (id <= lastid_[q.hoa]) {
+    else if (id <= lastid_[info.hoa]) {
       syslog(LOG_WARNING, "identifier smaller than previous one\n");
-      return MIPCODE_BAD_ID;
+      return MIPCODE_ID;
     }
-  
+
     return MIPCODE_ACCEPT;
+  }
+
+  request_info verify_request(char const *buf, int len)
+  {
+    request_info info;
+    bzero(&info, sizeof(info));
+
+    info.errcode = MIPCODE_ACCEPT;
+    char const *p = buf;
+
+    /* verify MIP header first */
+    struct miprequest_hdr *req = (struct miprequest_hdr *)p;
+    info.ha       = req->ha;
+    info.hoa      = req->hoa;
+    info.coa      = req->coa;
+    info.lifetime = req->lifetime;
+    info.id       = req->id;
+    p += sizeof(*req);
+
+    if (p - buf > len) {
+      syslog(LOG_WARNING, "bad MIP header\n");
+      info.errcode = MIPCODE_FORMAT;
+    }
+    if (req->type != MIPTYPE_REQUEST) {
+      syslog(LOG_WARNING, "incorrect MIP type value %d\n", req->type);
+      info.errcode = MIPCODE_FORMAT;
+    }
+    else if (req->ha != homeif_.addr().to_u32()) {
+      syslog(LOG_WARNING, "incorrect home agent address %08x\n", req->ha);
+      info.errcode = MIPCODE_HA;
+    }
+
+    /* MN HA auth is expected, normally */
+    int expect_mhauth = 1;
+    /* FA HA auth is not expected */
+    int expect_fhauth = 0;
+
+    /* search for extension */
+    while (p - buf < len && info.errcode == MIPCODE_ACCEPT) {
+      __u8 const *ptype = (__u8 const *)p;
+
+      switch (*ptype) {
+      case MIPEXT_MHAUTH:
+	expect_mhauth = 0;
+
+      case MIPEXT_FHAUTH:
+	if (*ptype == MIPEXT_FHAUTH)
+	  expect_fhauth = 0;
+        {
+          struct mip_auth *authext = (struct mip_auth *)p;
+          p += sizeof(*authext);
+  
+          info.spi = authext->spi;
+          int authlen = authext->length - 4;
+          char const *auth = p;
+          info.errcode = auth_request(auth, authlen, buf, p - buf, info);
+          p += authlen;
+	}
+        break;
+
+      case MIPEXT_PMIPSKIP:
+        {
+          struct pmip_skip *skip = (struct pmip_skip *)p;
+          p += sizeof(*skip);
+          p += skip->length - 1;
+  
+          /* all skippable subtype are skipped by HA */
+          syslog(LOG_WARNING, "skipping proxy mip4 extension %hhd\n", skip->subtype);
+	}
+        break;
+
+      case MIPEXT_PMIPNOSK:
+        {
+          struct pmip_nonskip *nonskip = (struct pmip_nonskip *)p;
+          p += sizeof(*nonskip);
+          p += ntohs(nonskip->length) - 1;
+  
+          if (nonskip->subtype != PMIPNOSK_AUTH) {
+            syslog(LOG_WARNING, "unknown non-skippable subtype %hhd\n", nonskip->subtype);
+            info.errcode = MIPCODE_FORMAT;
+          }
+          else if (nonskip->method != PMIPAUTH_FAHA) {
+            syslog(LOG_WARNING, "unknown non-skippable method %hhd\n", nonskip->method);
+            info.errcode = MIPCODE_FORMAT;
+          }
+          else {
+            /* set expect FA HA auth, not MN HA now */
+            expect_fhauth = 1;
+	    expect_mhauth = 0;
+          }
+	}
+        break;
+
+      default:
+        syslog(LOG_WARNING, "unsupported extension %hhd\n", *ptype);
+        info.errcode = MIPCODE_FORMAT;
+      }
+    }
+
+    if (info.errcode != MIPCODE_ACCEPT)
+      return info;
+
+    if (expect_mhauth) {
+      syslog(LOG_WARNING, "expecting MN HA auth extension\n");
+      info.errcode = MIPCODE_MNAUTH;
+    }
+    if (expect_fhauth) {
+      syslog(LOG_WARNING, "expecting FA HA auth extension\n");
+      info.errcode = MIPCODE_FAAUTH;
+    }
+    return info; 
   }
 
 public:
   ha_socket(sockpp::in_iface const &homeif)
     : homeif_(homeif)
   {
-    sockpp::in_address src_addr(INADDR_ANY, MIP_PORT);
+    sockpp::in_address src_addr(INADDR_ANY, MIPPORT);
     mip_.bind(src_addr);
     sadb::load_sadb();
   }
@@ -126,14 +290,21 @@ public:
     return mip_.select_read(tv);
   }
 
-  int recv(mip_rrq &q, sockpp::in_address &from) {
-      size_t len = mip_.recvfrom((char *)&q, packet::MTU, from);
-      return verify_rrq(q, len);
-  }
+  request_info accept_request() {
+    /* recv message */
+    sockpp::in_address from;
+    char buf[packet::MTU];
+    size_t len = mip_.recvfrom(buf, packet::MTU, from);
 
-  void reply(int errcode, mip_rrq &q, sockpp::in_address &from) {
-      struct mip_rrp p = create_rrp(q, errcode);
-      mip_.sendto((char *)&p, mip_msg_size(p), from);
+    /* verify request */
+    request_info info = verify_request(buf, len);
+
+    /* send reply */
+    char reply_buf[packet::MTU];
+    len = create_reply(reply_buf, packet::MTU, info);
+    mip_.sendto(reply_buf, len, from);
+
+    return info;
   }
 };
 
@@ -223,24 +394,19 @@ int main(int argc, char** argv)
         if (hagent.select_read(tv) == 0)
           continue;
       }
-      catch (exception &e) {
-        syslog(LOG_WARNING, "error ignored: %s", e.what());
+      catch (exception &) {
+        syslog(LOG_WARNING, "syscall 'select' interrupted");
 	continue;
       }
 
-      struct mip_rrq q;
-      in_address from;
-
-      int errcode = hagent.recv(q, from);
-      hagent.reply(errcode, q, from);
-
-      if (errcode != rfc3344::MIPCODE_ACCEPT)
+      struct request_info info = hagent.accept_request();
+      if (info.errcode != rfc3344::MIPCODE_ACCEPT)
         continue;
 
-      if (q.lifetime == 0)
-        bc.deregister_binding(q.hoa);
+      if (info.lifetime == 0)
+        bc.deregister_binding(info.hoa);
       else
-        bc.register_binding(q.hoa, q.ha, q.coa, q.auth.spi, q.lifetime);
+        bc.register_binding(info.hoa, info.ha, info.coa, info.lifetime);
     }
   }
   catch(exception &e) {

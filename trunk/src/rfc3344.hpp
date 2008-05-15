@@ -1,5 +1,6 @@
 /*
  * http://tools.ietf.org/html/rfc3344
+ * http://tools.ietf.org/html/draft-leung-mip4-proxy-mode-08
  */
 
 #ifndef PMIP_RFC3344_HPP
@@ -8,53 +9,56 @@
 #include <asm/types.h>
 #include <netinet/in.h>
 
-//#include <map>
-//#include <stdio.h>
-//#include <syslog.h>
-//#include "rfc1256.hpp"
-//#include "sockpp.hpp"
-//#include "packet.hpp"
-//#include "sadb.hpp"
-
 namespace rfc3344 {
 
-int const RA_EXTTYPE_MOBIAGENT = 16;
-int const RA_EXTTYPE_PREFLEN = 19;
+/* RFC3344 defines */
+int const RAEXT_MOBIAGENT = 16;
+int const RAEXT_PREFLEN = 19;
 
-int const MIP_PORT = 434;
+int const MIPPORT = 434;
 int const MIPTYPE_REQUEST = 1;
-int const MIPTYPE_REPLY = 3;
-int const MIP_EXTTYPE_AUTH = 32;
+int const MIPTYPE_REPLY   = 3;
+int const MIPEXT_MHAUTH  = 32;
+int const MIPEXT_MFAUTH  = 33;
+int const MIPEXT_FHAUTH  = 34;
 
-int const MIP_AUTH_MAX = 255;
+int const MIPCODE_ACCEPT    = 0;
+int const MIPCODE_ACCESS = 129;
+int const MIPCODE_MNAUTH = 131;
+int const MIPCODE_FAAUTH = 131;
+int const MIPCODE_ID     = 133;
+int const MIPCODE_FORMAT = 134;
+int const MIPCODE_HA     = 136;
 
-int const MIPCODE_ACCEPT = 0;
-int const MIPCODE_BAD_ACCESS = 129;
-int const MIPCODE_BAD_AUTH = 131;
-int const MIPCODE_BAD_ID = 133;
-int const MIPCODE_BAD_FORMAT = 134;
-int const MIPCODE_BAD_HA = 136;
+/* Proxy Mobile IPv4 defines */
 
-template <typename T>
-size_t mip_msg_authsize(T msg)
-{
-  if (sizeof(msg.auth))
-    ;
-  return sizeof(T) - MIP_AUTH_MAX;
-}
+/* non-skippable extension */
+int const MIPEXT_PMIPNOSK = 47;
+/* skippable extension */
+int const MIPEXT_PMIPSKIP = 147;
+/* per-node auth subtype for skippable ext */
+int const PMIPNOSK_AUTH    = 1;
+/* interface id subtype for non-skippable ext */
+int const PMIPSKIP_IFACE   = 1;
+/* device id subtype for non-skippable ext */
+int const PMIPSKIP_DEV     = 2;
+/* subscriber id subtype for non-skippable ext */
+int const PMIPSKIP_SUBS    = 3;
 
-template <typename T>
-size_t mip_msg_size(T msg)
-{
-  return sizeof(T) - MIP_AUTH_MAX + msg.auth.length - 4;
-}
+/* method for per-node auth */
+int const PMIPAUTH_FAHA    = 1;
+int const PMIPAUTH_IPSEC   = 2;
 
-struct ra_ext_hdr {
+/* VM home correspondent nodes externsion */
+int const PMIPSKIP_HOMECN  = 128;
+int const HOMECN_MAX       = 63; /* (255 - 1) /4 */
+
+struct raext_hdr {
   __u8 type;
   __u8 length;
 };
 
-struct ra_ext_magent_adv {
+struct raext_madv {
   __u16 sequence;
   __u16 lifetime;
   union {
@@ -73,14 +77,26 @@ struct ra_ext_magent_adv {
   __u8 reserved;
 } __attribute__((packed));
 
-struct mip_ext_auth {
+struct mip_auth {
   __u8 type;
   __u8 length;
   __u32 spi;
-  char auth[MIP_AUTH_MAX];
 } __attribute__((packed));
 
-struct mip_rrq {
+struct pmip_nonskip {
+  __u8  type;
+  __u8  subtype;
+  __u16 length;
+  __u8  method;
+} __attribute__((packed));
+
+struct pmip_skip {
+  __u8 type;
+  __u8 length;
+  __u8 subtype;
+} __attribute__((packed));
+
+struct miprequest_hdr {
   __u8 type;
   union {
     struct {
@@ -100,17 +116,15 @@ struct mip_rrq {
   in_addr_t ha;
   in_addr_t coa;
   __u64 id;
-  struct mip_ext_auth auth;
 } __attribute__((packed));
 
-struct mip_rrp {
+struct mipreply_hdr {
   __u8 type;
   __u8 code;
   __u16 lifetime;
   in_addr_t hoa;
   in_addr_t ha;
   __u64 id;
-  struct mip_ext_auth auth;
 } __attribute__((packed));
 
 } // namespace rfc3344

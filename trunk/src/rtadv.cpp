@@ -41,17 +41,17 @@ private:
     ra_addr->ira_addr = ifa_.addr().to_u32();
     ra_addr->ira_preference = 0;
   
-    ra_ext_hdr *ext = (ra_ext_hdr *)(buf + 16);
-    ext->type = RA_EXTTYPE_MOBIAGENT;
-    ext->length = sizeof(ra_ext_magent_adv);
+    raext_hdr *ext = (raext_hdr *)(buf + 16);
+    ext->type = RAEXT_MOBIAGENT;
+    ext->length = sizeof(raext_madv);
   
-    ra_ext_magent_adv *madv = (ra_ext_magent_adv *)(buf + 18);
+    raext_madv *madv = (raext_madv *)(buf + 18);
     madv->sequence = htons(vars_.increase_seq());
     madv->lifetime = 0xffff;
     madv->flag_H = 1;
   
-    ra_ext_hdr *ext2 = (ra_ext_hdr *)(buf + 24);
-    ext2->type = RA_EXTTYPE_PREFLEN;
+    raext_hdr *ext2 = (raext_hdr *)(buf + 24);
+    ext2->type = RAEXT_PREFLEN;
     ext2->length = 1;
   
     __u16 *ppreflen = (__u16 *)(buf + 26);

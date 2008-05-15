@@ -1,0 +1,100 @@
+#!/usr/bin/python
+
+import sys
+try:
+ 	import pygtk
+  	pygtk.require("2.0")
+except:
+	print "error pygtk version"
+  	pass
+try:
+	import gtk
+	import gobject
+  	import gtk.glade
+except:
+	print "error glade version"
+	sys.exit(1)
+
+class TestUI:
+	"""This is an Python GTK Glade application for"""
+
+	def __init__(self):
+		
+		#Set the Glade file
+		self.gladefile = "testui.glade"  
+	        self.wTree = gtk.glade.XML(self.gladefile) 
+		
+		if not self.wTree:
+			print "error glade file:", self.gladefile
+			sys.exit(1)
+
+		#Signal dictionary
+	        names = dir(self.__class__)
+	        dic = {}
+	        for name in [n for n in names if n[:3] == 'on_']:
+			dic[name] = getattr(self, name)
+		self.wTree.signal_autoconnect(dic) 
+
+		self.area = self.wTree.get_widget("drawingArea")
+		gobject.io_add_watch(0, gobject.IO_IN, self.on_stdin_read)
+		gobject.timeout_add(1000, self.on_redraw)
+
+		self.index = 0
+		self.rx = [0] * 200
+		self.tx = [0] * 200
+		self.rx_color = self.area.get_colormap().alloc_color("#FF0000", True, True)
+		self.tx_color = self.area.get_colormap().alloc_color("#0000FF", True, True)
+
+	def on_mainWin_destroy(self, widget):
+		print "exit"
+		gtk.main_quit()
+
+	def on_drawingArea_expose_event(self, area, event):
+		self.style = self.area.get_style()
+		self.gc = self.style.fg_gc[gtk.STATE_NORMAL]
+
+		old_color = self.gc.foreground
+
+		xmax = max(self.rx + self.tx)
+		if (xmax == 0):
+			return
+
+		self.gc.set_foreground(self.rx_color)
+		#rx_lines = [(i * 2, 200 - 200 * self.rx[i] / xmax) for i in range(200)]
+		#self.area.window.draw_lines(self.gc, rx_lines);
+		rx_lines = [(i * 2, 200, i * 2, 200 - 200 * self.rx[i] / xmax) for i in range(200)]
+		self.area.window.draw_segments(self.gc, rx_lines);
+
+		self.gc.set_foreground(self.tx_color)
+		#tx_lines = [(i * 2 + 1, 200 - 200 * self.tx[i] / xmax) for i in range(200)]
+		#self.area.window.draw_lines(self.gc, tx_lines);
+		tx_lines = [(i * 2 + 1, 200, i * 2 + 1, 200 - 200 * self.tx[i] / xmax) for i in range(200)]
+		self.area.window.draw_segments(self.gc, tx_lines);
+
+		self.gc.set_foreground(old_color)
+	
+	def on_stdin_read(self, source, cond):
+		ts, rx, tx = sys.stdin.readline().split()
+		self.index = self.index + 1
+
+		if (self.index == 1): #ignore first line
+			return True
+
+		if (self.index < 200):
+			self.rx[self.index] = int(rx)
+			self.tx[self.index] = int(tx)
+		else:
+			self.rx = self.rx[1:]
+			self.rx.append(int(rx))
+			self.tx = self.tx[1:]
+			self.tx.append(int(tx))
+
+		return True
+		
+	def on_redraw(self):
+		self.area.queue_draw()
+		return True
+	
+if __name__ == "__main__":
+	app = TestUI()
+	gtk.main()

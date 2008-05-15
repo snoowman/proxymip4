@@ -8,6 +8,7 @@
 #include <string>
 #include <stdexcept>
 #include "sockpp.hpp"
+#include "rfc3344.hpp"
 
 namespace bcache {
 
@@ -15,7 +16,6 @@ struct binding {
 	in_addr_t hoa;
 	in_addr_t ha;
 	in_addr_t coa;
-	__u32     spi;
 	time_t    timeout;
 };
 
@@ -34,7 +34,7 @@ public:
   };
 
   static void list_binding(char const *pname);
-  void register_binding(in_addr_t hoa, in_addr_t ha, in_addr_t coa, __u32 spi, __u16 lifetime);
+  void register_binding(in_addr_t hoa, in_addr_t ha, in_addr_t coa, __u16 lifetime);
   bool deregister_binding(in_addr_t hoa);
 
 protected:
@@ -73,8 +73,9 @@ public:
   std::map<std::string, int> mif_refcnt_;
   std::map<in_addr_t, std::string> miface_;
   std::map<in_addr_t, int> tunnel_tab_;
-  std::map<in_addr_t, in_addr_t> gateway_;
   int rtable_pool_[MAX_CLIENT];
+  in_addr_t homecn_[rfc3344::HOMECN_MAX];
+  int num_homecn_;
 
 private:
   int allocate_rtable() {
@@ -96,12 +97,13 @@ public:
     bzero(rtable_pool_, sizeof(rtable_pool_));
   }
 
-  void register_mif(in_addr_t hoa, char const* ifname) {
+  void store_mif(in_addr_t hoa, char const* ifname) {
     miface_[hoa] = ifname;
   }
 
-  void register_gateway(in_addr_t hoa, in_addr_t gw) {
-    gateway_[hoa] = gw;
+  void store_homecn(in_addr_t *homecn, int num) {
+    memcpy(homecn_, homecn, num * sizeof(in_addr_t));
+    num_homecn_ = num;
   }
 
 protected:

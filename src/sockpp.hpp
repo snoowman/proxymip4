@@ -204,7 +204,7 @@ public:
   in_iface(char const *ifname)
   {
     bzero(&ifr_, sizeof(ifr_));
-    strncpy(ifr_.ifr_name, ifname, IFNAMSIZ-1);
+    strncpy(ifr_.ifr_name, ifname, IFNAMSIZ - 1);
     // validate ifname by getting index 
     index();
   }

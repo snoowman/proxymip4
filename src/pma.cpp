@@ -21,50 +21,186 @@ using namespace bcache;
 using namespace sockpp;
 using namespace sadb;
 
+struct mip_info {
+  int       errcode;
+  char      ifname[IFNAMSIZ];
+  __u16     lifetime;
+  __u32     spi;
+  __u64     id;
+  in_addr_t hoa;
+  in_addr_t ha;
+  in_addr_t coa;
+  in_addr_t homecn[HOMECN_MAX];
+  int       num_homecn;
+};
+
 class pma_socket {
   sockpp::udp_socket mip_;
 
 private:
-  void create_rrq(struct mip_rrq *q, in_addr_t hoa, in_addr_t ha, in_addr_t coa, sadb::mipsa *sa, __u16 lifetime)
+  int create_request(char *buf, int buflen, mip_info &info)
   {
-    bzero(q, sizeof(*q));
-    q->type = MIPTYPE_REQUEST;
-    q->flag_T = 1;
-    q->lifetime = htons(lifetime);
-  
-    q->hoa = hoa;
-    q->ha = ha;
-    q->coa = coa;
-    q->id = htonll(time_stamp());
-  
-    q->auth.type = MIP_EXTTYPE_AUTH;
-    q->auth.spi = htonl(sa->spi);
-  
-    q->auth.length = authlen_by_sa(sa);
-    auth_by_sa(q->auth.auth, q, mip_msg_authsize(*q), sa);
-  }
-
-  void verify_rrp(struct mip_rrp const &p, size_t len, struct mip_rrq const &q)
-  {
-    if (p.type != MIPTYPE_REPLY)
-      throw packet::bad_packet("incorrect MIP type");
-    if (len != mip_msg_size(p))
-      throw packet::bad_packet("incorrect packet length");
-    if (p.hoa != q.hoa)
-      throw packet::bad_packet("incorrect home address");
-    if (p.ha != q.ha)
-      throw packet::bad_packet("incorrect care-of address");
-  
-    sadb::mipsa *sa = sadb::find_sa(ntohl(p.auth.spi));
+    sadb::mipsa *sa = sadb::find_sa(info.spi);
     if (!sa)
       throw sadb::invalid_spi();
 
-    int authlen = authlen_by_sa(sa);
-    if (authlen != p.auth.length)
+    bzero(buf, buflen);
+    char *p = buf;
+
+    /* fill in request header first */
+    struct miprequest_hdr *req = (struct miprequest_hdr *)p;
+    req->type = MIPTYPE_REQUEST;
+    req->lifetime = htons(info.lifetime);
+    req->hoa      = info.hoa;
+    req->ha       = info.ha;
+    req->coa      = info.coa;
+    req->id       = htonll(time_stamp());
+    info.id       = req->id;
+    /* request for reverse tunnel */
+    req->flag_T = 1; 
+    p += sizeof(*req);
+
+    /* add PMIP4 per-node auth extension */
+    struct pmip_nonskip *nonskip = (struct pmip_nonskip *)p;
+    nonskip->type    = MIPEXT_PMIPNOSK;
+    nonskip->subtype = PMIPNOSK_AUTH;
+    nonskip->length  = htons(1);
+    nonskip->method  = PMIPAUTH_FAHA;
+    p += sizeof(*nonskip);
+
+    /* add FA HA auth*/
+    struct mip_auth *auth = (struct mip_auth *)p;
+    auth->type = MIPEXT_FHAUTH;
+    auth->spi = htonl(info.spi);
+    auth->length = 4;
+    p += sizeof(*auth);
+
+    int authlen = sa_authlen(sa);
+    auth->length += authlen;
+    sa_auth(p, authlen, buf, p - buf, sa);
+    p += authlen;
+
+    if (p - buf > buflen)
+      throw packet::invalid_length();
+    return p - buf;
+  }
+
+  void auth_reply(char const *auth, int authlen, char const *buf, int len, mip_info &info)
+  {
+    sadb::mipsa *sa = sadb::find_sa(info.spi);
+    if (!sa)
+      throw packet::bad_packet("incorrect spi");
+
+    if (authlen != sa_authlen(sa))
       throw packet::bad_packet("incorrect auth length");
 
-    if (!verify_by_sa(p.auth.auth, &p, mip_msg_authsize(p), sa))
-      throw packet::bad_packet("authentication failed ");
+    if (!sa_verify(auth, authlen, buf, len, sa))
+      throw packet::bad_packet("authentication failed");
+  }
+
+  void verify_reply(char const *buf, int len, mip_info &info)
+  {
+    char const *p = buf;
+
+    /* verify MIP header first */
+    struct mipreply_hdr *rep= (struct mipreply_hdr *)p;
+    p += sizeof(*rep);
+    if (p - buf > len)
+      throw packet::bad_packet("bad MIP header");
+    if (rep->type != MIPTYPE_REPLY)
+      throw packet::bad_packet("bad MIP type");
+    if (info.hoa != rep->hoa)
+      throw packet::bad_packet("incorrect home address");
+    if (info.ha  != rep->ha)
+      throw packet::bad_packet("incorrect care-of address");
+    if (info.id != rep->id)
+      throw packet::bad_packet("incorrect id");
+  
+    /* MN HA auth is expected, normally */
+    int expect_mhauth = 1;
+    /* FA HA auth is not expected */
+    int expect_fhauth = 0;
+
+    /* search for extension */
+    while (p - buf < len) {
+      __u8 const *ptype = (__u8 const *)p;
+
+      switch (*ptype) {
+      case MIPEXT_MHAUTH:
+	expect_mhauth = 0;
+
+      case MIPEXT_FHAUTH:
+	if (*ptype == MIPEXT_FHAUTH)
+	  expect_fhauth = 0;
+        {
+          struct mip_auth *authext = (struct mip_auth *)p;
+          p += sizeof(*authext);
+  
+          info.spi = ntohl(authext->spi);
+          int authlen = authext->length - 4;
+          char const *auth = p;
+          auth_reply(auth, authlen, buf, p - buf, info);
+          p += authlen;
+	}
+        break;
+
+      case MIPEXT_PMIPSKIP:
+        {
+          struct pmip_skip *skip = (struct pmip_skip *)p;
+          p += sizeof(*skip);
+          if (skip->subtype != PMIPSKIP_HOMECN) {
+            /* other skippable subtype are skipped by PMA */
+            syslog(LOG_WARNING, "skipping proxy mip4 extension %hhd", skip->subtype);
+	  }
+	  else if ((skip->length - 1) % sizeof(in_addr_t) != 0) {
+            syslog(LOG_WARNING, "invalid homecn length %hhd, ignored", skip->length);
+	  }
+	  else {
+	    int num_addr = (skip->length - 1) / sizeof(in_addr_t);
+	    info.num_homecn = num_addr;
+            memcpy(info.homecn, p, num_addr * sizeof(in_addr_t));
+	  }
+          p += skip->length - 1;
+	}
+        break;
+
+      case MIPEXT_PMIPNOSK:
+        {
+          struct pmip_nonskip *nonskip = (struct pmip_nonskip *)p;
+          p += sizeof(*nonskip);
+          p += ntohs(nonskip->length) - 1;
+  
+          if (nonskip->subtype != PMIPNOSK_AUTH) {
+            throw packet::bad_packet("unknown non-skippable subtype");
+          }
+          else if (nonskip->method != PMIPAUTH_FAHA) {
+            throw packet::bad_packet("unknown non-skippable method");
+          }
+          else {
+            /* set expect FA HA auth, not MN HA now */
+            expect_fhauth = 1;
+	    expect_mhauth = 0;
+          }
+	}
+        break;
+
+      default:
+        throw packet::bad_packet("unsupported extension");
+      }
+    }
+
+    /* verify packet are authenticated */
+    if (expect_mhauth)
+      throw packet::bad_packet("expecting MN HA auth extension");
+    if (expect_fhauth)
+      throw packet::bad_packet("expecting FA HA auth extension");
+
+    /* verify no gabbage in packet */
+    if (p - buf != len)
+      throw packet::bad_packet("incorrect packet length");
+
+    /* store MIP code to info */
+    info.errcode = rep->code;
   }
 
 public:
@@ -74,44 +210,30 @@ public:
     mip_.reuse_addr();
   }
 
-  struct mip_rrp request(in_addr_t hoa, in_addr_t ha, in_addr_t coa, __u32 spi, __u16 lifetime) {
-    sadb::mipsa *sa = sadb::find_sa(spi);
-
-    if (!sa)
-      throw sadb::invalid_spi();
-
-    sockpp::in_address coa_port(coa);
+  void request(mip_info &info) {
+    /* rebind to CoA address */
+    sockpp::in_address coa_port(info.coa);
     mip_.rebind(coa_port);
 
-    struct mip_rrq q;
-    create_rrq(&q, hoa, ha, coa, sa, lifetime);
+    /* create and send request to HA addr */
+    char buf[packet::MTU];
+    int len = create_request(buf, packet::MTU, info);
+    sockpp::in_address ha_port(info.ha, MIPPORT);
+    mip_.sendto(buf, len, ha_port);
 
-    sockpp::in_address ha_port(ha, MIP_PORT);
-    mip_.sendto((char *)&q, mip_msg_size(q), ha_port);
-
+    /* wait for 1 second */
     struct timeval timeout;
     timeout.tv_sec = 1;
     timeout.tv_usec = 0;
     if (mip_.select_read(timeout) == 0)
       throw packet::recv_timeout("receiving MIP4 RRP");
 
-    struct mip_rrp p;
-    size_t len = mip_.recv((char *)&p, sizeof(p));
-    verify_rrp(p, len, q);
+    /* verify response */
+    char reply_buf[packet::MTU];
+    len = mip_.recv(reply_buf, packet::MTU);
 
-    return p;
+    verify_reply(reply_buf, len, info);
   }
-};
-
-struct pma_msg {
-  int code;
-  in_addr_t hoa;
-  in_addr_t ha;
-  in_addr_t coa;
-  in_addr_t gw;
-  __u32 spi;
-  __u16 lifetime;
-  char ifname[10];
 };
 
 class pma_unix {
@@ -137,8 +259,12 @@ public:
     strcpy(remote_.sun_path, fremote);
   }
 
-  void send(pma_msg const &msg) {
+  void send(mip_info const &msg) {
     sendto_ex(fd_, &msg, sizeof(msg), 0, (struct sockaddr *)&remote_, sizeof(remote_));
+  }
+
+  void send_code(int errcode) {
+    sendto_ex(fd_, &errcode, sizeof(errcode), 0, (struct sockaddr *)&remote_, sizeof(remote_));
   }
 
   int select_read(timeval &tv) const {
@@ -150,11 +276,18 @@ public:
     return select_ex(fd_ + 1, &rfds, NULL, NULL, &tv);
   }
 
-  pma_msg recv() {
-    pma_msg msg;
+  mip_info recv() {
+    mip_info msg;
     socklen_t len = sizeof(remote_);
     recvfrom_ex(fd_, &msg, sizeof(msg), 0, (struct sockaddr *)&remote_, &len);
     return msg;
+  }
+
+  int recv_code() {
+    int ret;
+    socklen_t len = sizeof(remote_);
+    recvfrom_ex(fd_, &ret, sizeof(ret), 0, (struct sockaddr *)&remote_, &len);
+    return ret;
   }
 
   ~pma_unix() {
@@ -169,12 +302,11 @@ static void usage()
 {
   fprintf(stderr, "\
 Usage: %s -d\n\
-       %s -m <hoa> -c <coa> -h <ha> -g <gw> -s <spi> -i <if> -l <life> -f\n\
+       %s -m <hoa> -c <coa> -h <ha> -s <spi> -i <if> -l <life> -f\n\
   -d   start pma daemon\n\
   -m   register home address 'hoa'\n\
   -c   using care-of address 'coa'\n\
   -h   register with home agent 'ha'\n\
-  -g   set gateway of mn to 'gw'\n\
   -r   remove socket file if needed\n\
   -l   lifetime, default to 0xfffe\n\
   -i   link 'if' which mn reside\n\
@@ -224,7 +356,7 @@ void pma_daemon()
       if (handle_signal(&signo)) // should we exit?
         break;
 
-      pma_msg m;
+      mip_info info;
       struct timeval tv;
       tv.tv_sec = 1;
       tv.tv_usec = 0;
@@ -233,35 +365,32 @@ void pma_daemon()
         if (un.select_read(tv) == 0)
           continue;
       }
-      catch (exception &e) {
-        syslog(LOG_WARNING, "error ignored: %s\n", e.what());
+      catch (exception &) {
+        syslog(LOG_WARNING, "syscall 'select' interrupted");
 	continue;
       }
 
       try {
-        m = un.recv();
-        syslog(LOG_INFO, "sending MIP4 RRQ for MN %08x with lifetime %hu\n", m.hoa, m.lifetime);
+        info = un.recv();
+        syslog(LOG_INFO, "sending MIP4 RRQ for MN %08x with lifetime %hu\n", info.hoa, info.lifetime);
     
-        struct mip_rrp p = pmagent.request(m.hoa, m.ha, m.coa, m.spi, m.lifetime);
-        if (p.code == MIPCODE_ACCEPT) 
+        pmagent.request(info);
+        if (info.errcode == MIPCODE_ACCEPT) 
 	{
-          bc.register_mif(m.hoa, m.ifname);
-          syslog(LOG_DEBUG, "register gateway %08x", m.gw);
-	  if (m.gw != 0)
-	    bc.register_gateway(m.hoa, m.gw);
+          bc.store_mif(info.hoa, info.ifname);
+	  if (info.num_homecn)
+	    bc.store_homecn(info.homecn, info.num_homecn);
 
-          if (m.lifetime == 0) 
-            bc.deregister_binding(m.hoa);
+          if (info.lifetime == 0) 
+            bc.deregister_binding(info.hoa);
           else 
-            bc.register_binding(m.hoa, m.ha, m.coa, m.spi, m.lifetime);
+            bc.register_binding(info.hoa, info.ha, info.coa, info.lifetime);
         }
-        m.code = p.code;
-	un.send(m);
+	un.send_code(info.errcode);
       }
       catch (exception &e) {
         syslog(LOG_ERR, "error sending MIP4 RRQ: %s\n", e.what());
-	m.code = -1;
-	un.send(m);
+	un.send_code(-1);
       }
     }
   }
@@ -283,7 +412,6 @@ int main(int argc, char **argv)
   in_addr_t hoa = 0;
   in_addr_t ha = 0;
   in_addr_t coa = 0;
-  in_addr_t gw = 0;
   char *ifname = NULL;
   __u32 spi = 0;
   __u16 lifetime = 0xfffe;
@@ -292,7 +420,7 @@ int main(int argc, char **argv)
 
   try {
     char c;
-    while ((c = getopt(argc, argv, "h:m:c:g:s:l:i:dr")) != -1) {
+    while ((c = getopt(argc, argv, "h:m:c:s:l:i:dr")) != -1) {
       switch (c) {
       case 'h':
         ha = in_address(optarg).to_u32();
@@ -302,9 +430,6 @@ int main(int argc, char **argv)
         break;
       case 'c':
         coa = in_address(optarg).to_u32();
-        break;
-      case 'g':
-        gw = in_address(optarg).to_u32();
         break;
       case 'i':
         ifname = optarg;
@@ -348,26 +473,25 @@ int main(int argc, char **argv)
     pma_unix un(PMA_CLIENT_SOCK);
     un.set_remote(PMA_SERVER_SOCK);
 
-    pma_msg m;
-    m.code = 0;
+    mip_info m;
+    m.errcode = 0;
     m.ha = ha;
     m.hoa = hoa;
     m.coa = coa;
-    m.gw = gw;
     m.spi = spi;
     m.lifetime = lifetime;
-    strncpy(m.ifname, ifname, 10);
+    strncpy(m.ifname, ifname, IFNAMSIZ - 1);
 
     un.send(m);
 
     struct timeval tv;
-    tv.tv_sec = 10;
+    tv.tv_sec = 2;
     tv.tv_usec = 0;
     if (un.select_read(tv) == 0)
       throw packet::recv_timeout("receiving from UNIX socket");
 
-    pma_msg n = un.recv();
-    fprintf(stderr, "reply code = %d\n", n.code);
+    int errcode = un.recv_code();
+    fprintf(stderr, "reply code = %d\n", errcode);
   }
   catch (exception &e) {
     fprintf(stderr, "%s\n", e.what());

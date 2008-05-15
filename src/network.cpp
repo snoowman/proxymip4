@@ -137,7 +137,7 @@ int unregister_source_route(in_addr_t hoa, int tab, char const *mif)
 }
 
 void send_arp(int s, in_addr_t src, in_addr_t dst,
-        struct sockaddr_ll *llsrc, struct sockaddr_ll *lldst, bool reply)
+        struct sockaddr_ll *llsrc, struct sockaddr_ll *lldst, bool reply = false)
 {
   unsigned char buf[256];
   struct arphdr *ah = (struct arphdr*)buf;
@@ -168,16 +168,11 @@ void send_arp(int s, in_addr_t src, in_addr_t dst,
   memcpy(p, &dst, 4);
   p+=4;
 
-  int i;
-  for (i = 0; i < 3; ++i) {
-    usleep(50000);
-    sendto_ex(s, buf, p-buf, 0, (struct sockaddr*)lldst, sizeof(*lldst));
-  }
+  sendto_ex(s, buf, p-buf, 0, (struct sockaddr*)lldst, sizeof(*lldst));
 }
 
-void send_grat_arp(char const *device, in_addr_t ipaddr)
+void send_grat_arp(char const *device, in_addr_t *addr, int num_addr)
 {
-  syslog(LOG_DEBUG, "send grat_arp for %08x to link %s", ipaddr, device);
   sockpp::in_iface ifa(device);
   int ifindex = ifa.index();
   int ifflags = ifa.flags();
@@ -212,7 +207,12 @@ void send_grat_arp(char const *device, in_addr_t ipaddr)
 
   lldst = llsrc;
   memset(lldst.sll_addr, -1, lldst.sll_halen);
-  send_arp(s, ipaddr, ipaddr, &llsrc, &lldst, 0 /* not reply */);
+
+  for (int i = 0; i < 3; ++i) {
+    usleep(50000);
+    for (int j = 0; j < num_addr; ++j)
+      send_arp(s, addr[j], addr[j], &llsrc, &lldst);
+  }
   close_ex(s);
 }
 

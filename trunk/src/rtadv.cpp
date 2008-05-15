@@ -1,6 +1,7 @@
 #include <getopt.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <syslog.h>
 #include <exception>
 #include <boost/lexical_cast.hpp>
 #include "rfc1256.hpp"
@@ -13,6 +14,115 @@ using namespace boost;
 using namespace rfc1256;
 using namespace rfc3344;
 using namespace sockpp;
+
+class rtadv_socket {
+  sockpp::icmp_socket icmp_;
+  sockpp::in_iface const &ifa_;
+  rfc1256::router_vars &vars_;
+
+private:
+  int create_rtadv_msg(char *buf, ssize_t size)
+  {
+    ssize_t rtadv_len = 8 + 8 + 8 + 3 + 1;
+    if (size < rtadv_len)
+      throw packet::invalid_length();
+
+    // len = ICMP header + 1 address + mipext + prefixext + padding;
+    bzero(buf, rtadv_len);
+  
+    struct icmp *icmp = (struct icmp *)buf;
+    icmp->icmp_type = rfc1256::ICMP_ROUTER_ADV;
+    icmp->icmp_code = 16;
+    icmp->icmp_num_addrs = 1;
+    icmp->icmp_wpa = 2;
+    icmp->icmp_lifetime = htons(vars_.adv_lifetime());
+  
+    struct icmp_ra_addr *ra_addr = (struct icmp_ra_addr *)(buf + 8);
+    ra_addr->ira_addr = ifa_.addr().to_u32();
+    ra_addr->ira_preference = 0;
+  
+    ra_ext_hdr *ext = (ra_ext_hdr *)(buf + 16);
+    ext->type = RA_EXTTYPE_MOBIAGENT;
+    ext->length = sizeof(ra_ext_magent_adv);
+  
+    ra_ext_magent_adv *madv = (ra_ext_magent_adv *)(buf + 18);
+    madv->sequence = htons(vars_.increase_seq());
+    madv->lifetime = 0xffff;
+    madv->flag_H = 1;
+  
+    ra_ext_hdr *ext2 = (ra_ext_hdr *)(buf + 24);
+    ext2->type = RA_EXTTYPE_PREFLEN;
+    ext2->length = 1;
+  
+    __u16 *ppreflen = (__u16 *)(buf + 26);
+    *ppreflen = ifa_.preflen();
+  
+    icmp->icmp_cksum = packet::in_cksum(icmp, rtadv_len);
+  
+    return rtadv_len;
+  }
+
+public:
+  rtadv_socket(sockpp::in_iface const &ifa, rfc1256::router_vars &vars)
+    : ifa_(ifa), vars_(vars)
+  {
+    icmp_.bindif(ifa); 
+    icmp_.join_mcast(sockpp::in_address(htonl(INADDR_ALLRTRS_GROUP)));
+    icmp_.icmp_filter(rfc1256::ICMP_ROUTER_SOL);
+  }
+  
+  void send_rtadv(sockpp::in_address dest) {
+    char buf[packet::MTU];  
+    int len = create_rtadv_msg(buf, packet::MTU);
+    icmp_.sendto(buf, len, dest);
+  }
+
+  sockpp::in_address recv_rtsol() {
+    char buf[packet::MTU];
+
+    sockpp::in_address ret;
+    int len = icmp_.recvfrom(buf, packet::MTU, ret);
+    
+    struct icmp *p = (struct icmp*) (buf + sizeof(struct ip));
+    len -= sizeof(struct ip);
+    if (packet::in_cksum(p, len) != 0)
+      throw packet::bad_packet("bad icmp cksum");
+  
+    if (p->icmp_type != rfc1256::ICMP_ROUTER_SOL)
+      throw packet::bad_packet("unexpected icmp type");
+
+    return ret;
+  }
+
+  void serv_multicast() {
+    sockpp::in_address multicast(htonl(INADDR_ALLHOSTS_GROUP));
+
+    try {
+      for (;;) {
+        send_rtadv(multicast);
+  
+        timeval tv = vars_.adv_interval();
+        syslog(LOG_INFO, "sending rtadv after %lu.%06lu s delay\n", tv.tv_sec, tv.tv_usec);
+        reply_unicast_timeout(tv);
+      }
+    }
+    catch (std::exception &e) {
+      syslog(LOG_ERR, "error: %s", e.what());
+    }
+  }
+
+  void reply_unicast_timeout(timeval &tv) {
+    while(icmp_.select_read(tv) > 0) {
+      try {
+        sockpp::in_address sol_addr = recv_rtsol();
+        send_rtadv(sol_addr);
+      }
+      catch (packet::bad_packet &e) {
+        syslog(LOG_WARNING, "%s\n", e.what());
+      }
+    }
+  }
+};
 
 char *progname;
 

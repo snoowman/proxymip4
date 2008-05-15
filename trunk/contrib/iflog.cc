@@ -21,7 +21,7 @@ int main(int argc, char **argv)
   while (1) {
     struct timeval tv;
     gettimeofday(&tv, NULL);
-    printf("%u.%06u ", tv.tv_sec, tv.tv_usec);
+    printf("%lu.%06lu ", tv.tv_sec, tv.tv_usec);
     std::ifstream ifs("/proc/net/dev");
     while (ifs) {
       std::string str;

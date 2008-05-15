@@ -1,6 +1,7 @@
 CFLAGS  = -Wall
+CPPFLAGS  = -Wall
 LDFLAGS = -lstdc++ -lssl
-PROGS   = rtadv rtsol sa ha pma iflog
+PROGS   = rtadv rtsol sa ha pma
 OBJS    = $(PROGS:=.o) common.o sadb.o bcache.o network.o
 
 all: $(PROGS)
@@ -24,4 +25,4 @@ clean:
 	$(COMPILE.cpp) $(CFLAGS) $*.cpp -o $*.o
 	@$(CC) -MM $(CFLAGS) $*.cpp -o $*.d
 
-.PHONY: clean
+.PHONY: all clean

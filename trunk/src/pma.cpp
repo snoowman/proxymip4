@@ -12,6 +12,7 @@
 #include "sockpp.hpp"
 #include "bcache.hpp"
 #include "packet.hpp"
+#include "network.hpp"
 #include "config.hpp"
 
 using namespace std;
@@ -59,6 +60,19 @@ private:
     /* request for reverse tunnel */
     req->flag_T = 1; 
     p += sizeof(*req);
+
+    /* if needed, add homecn extension */
+    if (!info.lifetime) {
+      struct pmip_skip *skip = (struct pmip_skip *)p;
+      skip->type = MIPEXT_PMIPSKIP;
+      skip->subtype = PMIPSKIP_HOMECN;
+      p += sizeof(*skip);
+  
+      in_addr_t *homecn = (in_addr_t *)p;
+      int num_addr = load_neigh(homecn, HOMECN_MAX, info.ifname);
+      skip->length  = 1 + 4 * num_addr;
+      p += 4 * num_addr;
+    }
 
     /* add PMIP4 per-node auth extension */
     struct pmip_nonskip *nonskip = (struct pmip_nonskip *)p;
@@ -390,8 +404,7 @@ void pma_daemon()
         if (info.errcode == MIPCODE_ACCEPT) 
 	{
           bc.store_mif(info.hoa, info.ifname);
-	  if (info.num_homecn)
-	    bc.store_homecn(info.homecn, info.num_homecn);
+	  bc.store_homecn(info.homecn, info.num_homecn);
 
           if (info.lifetime == 0) 
             bc.deregister_binding(info.hoa);
@@ -486,6 +499,8 @@ int main(int argc, char **argv)
     un.set_remote(PMA_SERVER_SOCK);
 
     mip_info m;
+    bzero(&m, sizeof(m));
+
     m.errcode = 0;
     m.ha = ha;
     m.hoa = hoa;

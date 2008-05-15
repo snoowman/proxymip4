@@ -23,8 +23,13 @@ class generic_bcache {
   std::map<in_addr_t, binding> bindings_;
   static generic_bcache *singleton;
 
+protected:
+  in_addr_t homecn_[rfc3344::HOMECN_MAX];
+  int num_homecn_;
+
 public:
   generic_bcache() {
+    num_homecn_ = 0;
     if (singleton == 0)
       singleton = this;
   }
@@ -32,6 +37,11 @@ public:
   virtual ~generic_bcache() {
     singleton = 0;
   };
+
+  void store_homecn(in_addr_t *homecn, int num) {
+    memcpy(homecn_, homecn, num * sizeof(in_addr_t));
+    num_homecn_ = num;
+  }
 
   static void list_binding(char const *pname);
   void register_binding(in_addr_t hoa, in_addr_t ha, in_addr_t coa, __u16 lifetime);
@@ -74,8 +84,6 @@ public:
   std::map<in_addr_t, std::string> miface_;
   std::map<in_addr_t, int> tunnel_tab_;
   int rtable_pool_[MAX_CLIENT];
-  in_addr_t homecn_[rfc3344::HOMECN_MAX];
-  int num_homecn_;
 
 private:
   int allocate_rtable() {
@@ -99,11 +107,6 @@ public:
 
   void store_mif(in_addr_t hoa, char const* ifname) {
     miface_[hoa] = ifname;
-  }
-
-  void store_homecn(in_addr_t *homecn, int num) {
-    memcpy(homecn_, homecn, num * sizeof(in_addr_t));
-    num_homecn_ = num;
   }
 
 protected:

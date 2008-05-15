@@ -10,6 +10,9 @@
 #include <net/if_arp.h>
 #include <linux/if_packet.h>
 #include <linux/if_ether.h>
+#include <fstream>
+#include <sstream>
+
 #include "network.hpp"
 #include "posixpp.hpp"
 #include "sockpp.hpp"
@@ -179,12 +182,12 @@ void send_grat_arp(char const *device, in_addr_t *addr, int num_addr)
 
   if (!(ifflags & IFF_UP)) {
     syslog(LOG_WARNING, "Interface \"%s\" is down", device);
-    syslog(LOG_WARNING, "failed sending gratitutous ARP");
+    syslog(LOG_WARNING, "failed sending gratuitous ARP");
     return;
   }
   if (ifflags & (IFF_NOARP|IFF_LOOPBACK)) {
     syslog(LOG_WARNING, "Interface \"%s\" is not ARPable", device);
-    syslog(LOG_WARNING, "failed sending gratitutous ARP");
+    syslog(LOG_WARNING, "failed sending gratuitous ARP");
     return;
   }
 
@@ -201,7 +204,7 @@ void send_grat_arp(char const *device, in_addr_t *addr, int num_addr)
 
   if (llsrc.sll_halen == 0) {
     syslog(LOG_WARNING, "Interface \"%s\" is not ARPable (no ll address)", device);
-    syslog(LOG_WARNING, "failed sending gratitutous ARP");
+    syslog(LOG_WARNING, "failed sending gratuitous ARP");
     return;
   }
 
@@ -214,5 +217,36 @@ void send_grat_arp(char const *device, in_addr_t *addr, int num_addr)
       send_arp(s, addr[j], addr[j], &llsrc, &lldst);
   }
   close_ex(s);
+}
+
+
+/*
+ * load neighbor IP Addresses of an interface
+ */
+int load_neigh(in_addr_t *addrs, int max, char const* ifname)
+{
+  static char const *PROC_NET_ARP = "/proc/net/arp";
+  std::ifstream arpf(PROC_NET_ARP);
+  std::string line;
+
+  // ignore first line
+  std::getline(arpf, line);
+
+  int count = 0;
+  while (arpf && count != max) {
+    std::getline(arpf, line);
+    if (!line.length())
+      break;
+
+    std::stringstream ss(line);
+    std::string ip, unused, iface;
+    ss >> ip >> unused >> unused >> unused >> unused >> iface;
+
+    if (iface == ifname) {
+      sockpp::in_address addr(ip.c_str());
+      addrs[count++] = addr.to_u32();
+    }
+  }
+  return count;
 }
 

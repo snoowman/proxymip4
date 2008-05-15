@@ -11,7 +11,7 @@
 #include "sadb.hpp"
 #include "sockpp.hpp"
 #include "bcache.hpp"
-#include "sadb.hpp"
+#include "packet.hpp"
 #include "config.hpp"
 
 using namespace std;
@@ -21,25 +21,87 @@ using namespace bcache;
 using namespace sockpp;
 using namespace sadb;
 
-static char const *progname;
+class pma_socket {
+  sockpp::udp_socket mip_;
 
-static void usage()
-{
-  fprintf(stderr, "\
-Usage: %s -d\n\
-       %s -m <hoa> -c <coa> -h <ha> -g <gw> -s <spi> -i <if> -l <life> -f\n\
-  -d   start pma daemon\n\
-  -m   register home address 'hoa'\n\
-  -c   using care-of address 'coa'\n\
-  -h   register with home agent 'ha'\n\
-  -g   set gateway of mn to 'gw'\n\
-  -r   remove socket file if needed\n\
-  -l   lifetime, default to 0xfffe\n\
-  -i   link 'if' which mn reside\n\
-  -s   spi index for regstration\n",
-     progname, progname);
-  exit(-1);
-}
+private:
+  void create_rrq(struct mip_rrq *q, in_addr_t hoa, in_addr_t ha, in_addr_t coa, sadb::mipsa *sa, __u16 lifetime)
+  {
+    bzero(q, sizeof(*q));
+    q->type = MIPTYPE_REQUEST;
+    q->flag_T = 1;
+    q->lifetime = htons(lifetime);
+  
+    q->hoa = hoa;
+    q->ha = ha;
+    q->coa = coa;
+    q->id = htonll(time_stamp());
+  
+    q->auth.type = MIP_EXTTYPE_AUTH;
+    q->auth.spi = htonl(sa->spi);
+  
+    q->auth.length = authlen_by_sa(sa);
+    auth_by_sa(q->auth.auth, q, mip_msg_authsize(*q), sa);
+  }
+
+  void verify_rrp(struct mip_rrp const &p, size_t len, struct mip_rrq const &q)
+  {
+    if (p.type != MIPTYPE_REPLY)
+      throw packet::bad_packet("incorrect MIP type");
+    if (len != mip_msg_size(p))
+      throw packet::bad_packet("incorrect packet length");
+    if (p.hoa != q.hoa)
+      throw packet::bad_packet("incorrect home address");
+    if (p.ha != q.ha)
+      throw packet::bad_packet("incorrect care-of address");
+  
+    sadb::mipsa *sa = sadb::find_sa(ntohl(p.auth.spi));
+    if (!sa)
+      throw sadb::invalid_spi();
+
+    int authlen = authlen_by_sa(sa);
+    if (authlen != p.auth.length)
+      throw packet::bad_packet("incorrect auth length");
+
+    if (!verify_by_sa(p.auth.auth, &p, mip_msg_authsize(p), sa))
+      throw packet::bad_packet("authentication failed ");
+  }
+
+public:
+  pma_socket() {
+    sadb::load_sadb();
+    randomize();
+    mip_.reuse_addr();
+  }
+
+  struct mip_rrp request(in_addr_t hoa, in_addr_t ha, in_addr_t coa, __u32 spi, __u16 lifetime) {
+    sadb::mipsa *sa = sadb::find_sa(spi);
+
+    if (!sa)
+      throw sadb::invalid_spi();
+
+    sockpp::in_address coa_port(coa);
+    mip_.rebind(coa_port);
+
+    struct mip_rrq q;
+    create_rrq(&q, hoa, ha, coa, sa, lifetime);
+
+    sockpp::in_address ha_port(ha, MIP_PORT);
+    mip_.sendto((char *)&q, mip_msg_size(q), ha_port);
+
+    struct timeval timeout;
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+    if (mip_.select_read(timeout) == 0)
+      throw packet::recv_timeout("receiving MIP4 RRP");
+
+    struct mip_rrp p;
+    size_t len = mip_.recv((char *)&p, sizeof(p));
+    verify_rrp(p, len, q);
+
+    return p;
+  }
+};
 
 struct pma_msg {
   int code;
@@ -101,6 +163,25 @@ public:
   }
 };
 
+static char const *progname;
+
+static void usage()
+{
+  fprintf(stderr, "\
+Usage: %s -d\n\
+       %s -m <hoa> -c <coa> -h <ha> -g <gw> -s <spi> -i <if> -l <life> -f\n\
+  -d   start pma daemon\n\
+  -m   register home address 'hoa'\n\
+  -c   using care-of address 'coa'\n\
+  -h   register with home agent 'ha'\n\
+  -g   set gateway of mn to 'gw'\n\
+  -r   remove socket file if needed\n\
+  -l   lifetime, default to 0xfffe\n\
+  -i   link 'if' which mn reside\n\
+  -s   spi index for regstration\n",
+     progname, progname);
+  exit(-1);
+}
 
 int handle_signal(volatile int *psigno)
 {

@@ -11,5 +11,7 @@ int popen2_ex(char **cmd, int *rfd, int *wfd);
 void print_hex(char *buf, int len);
 char *parse_progname(char *path);
 void daemonize(char const* progname, volatile int *psigno);
+__u64 time_stamp();
+
 
 #endif

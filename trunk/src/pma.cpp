@@ -71,7 +71,7 @@ private:
      *   nonskip->length  = htons(1);
      * but I decide to use u8 instead, bit me
      */
-    nonskip->length  = 1;
+    nonskip->length  = 2;
     p += sizeof(*nonskip);
 
     /* add FA HA auth*/
@@ -180,7 +180,7 @@ private:
            *   p += ntohs(nonskip->length) - 1;
            * but I decide to use u8 instead, bit me
            */
-          p += nonskip->length - 1;
+          p += nonskip->length - 2;
   
           if (nonskip->subtype != PMIPNOSK_AUTH) {
             throw packet::bad_packet("unknown non-skippable subtype");

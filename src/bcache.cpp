@@ -86,11 +86,11 @@ void ha_bcache::register_binding_callback(in_addr_t hoa, in_addr_t ha, in_addr_t
 void ha_bcache::deregister_binding_callback(in_addr_t hoa, in_addr_t ha, in_addr_t coa)
 {
   deregister_hoa(hoa, coa, hif_.name());
-  // who sends grat arp for mn returning home? or no one?
-  send_grat_arp(hif_.name(), &ha, 1);
-
   if (--coa_refcnt_[coa] == 0)
     release_tunnel(coa);
+
+  /* return HOME: ARP are sent for MN to update HOME CN's ARP */
+  send_grat_arp(hif_.name(), homecn_, num_homecn_);
 }
 
 void pma_bcache::register_binding_callback(in_addr_t hoa, in_addr_t ha, in_addr_t coa)
@@ -109,7 +109,7 @@ void pma_bcache::register_binding_callback(in_addr_t hoa, in_addr_t ha, in_addr_
   set_proxy_arp(ifname, 1);
   register_source_route(hoa, tab, ifname);
 
-  /* this would be where ARP are sent to HOME CN */
+  /* register to PMA: ARP are sent for MN to update HOME CN's ARP */
   send_grat_arp(ifname, homecn_, num_homecn_);
 }
 

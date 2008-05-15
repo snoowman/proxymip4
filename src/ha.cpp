@@ -4,16 +4,13 @@
 #include <stdlib.h>
 #include <syslog.h>
 #include <exception>
-#include <fstream>
-#include <sstream>
 #include "common.hpp"
 #include "rfc3344.hpp"
 #include "sadb.hpp"
 #include "sockpp.hpp"
 #include "bcache.hpp"
 #include "packet.hpp"
-
-#define PROC_NET_ARP "/proc/net/arp"
+#include "network.hpp"
 
 using namespace std;
 using namespace sockpp;
@@ -22,13 +19,15 @@ using namespace sadb;
 using namespace bcache;
 
 struct request_info {
-  int errcode;
-  __u16 lifetime;
+  int       errcode;
+  __u16     lifetime;
+  __u32     spi;
+  __u64     id;
   in_addr_t hoa;
   in_addr_t ha;
   in_addr_t coa;
-  __u32 spi;
-  __u64 id;
+  in_addr_t homecn[HOMECN_MAX];
+  int       num_homecn;
 };
 
 class ha_socket {
@@ -37,35 +36,6 @@ class ha_socket {
   std::map<__u32, __u64> lastid_;
 
 private:
-  /*
-   * Get IP Address of Home Correspondent Node
-   */
-  int load_homecn(in_addr_t *addrs, char const* homeif)
-  {
-    std::ifstream arpf(PROC_NET_ARP);
-    std::string line;
-  
-    // ignore first line
-    std::getline(arpf, line);
-  
-    int count = 0;
-    while (arpf && count != HOMECN_MAX) {
-      std::getline(arpf, line);
-      if (!line.length())
-        break;
-  
-      std::stringstream ss(line);
-      std::string ip, unused, iface;
-      ss >> ip >> unused >> unused >> unused >> unused >> iface;
-  
-      if (iface == homeif) {
-        sockpp::in_address addr(ip.c_str());
-        addrs[count++] = addr.to_u32();
-      }
-    }
-    return count;
-  }
-
   int create_reply(char *buf, int buflen, request_info const &info)
   {
     bzero(buf, buflen);
@@ -93,19 +63,20 @@ private:
      * but I decide to use u8 instead, bit me
      */
     nonskip->length  = 2;
-
     p += sizeof(*nonskip);
 
-    /* add VM home correspondent nodes externsion */
-    struct pmip_skip *skip = (struct pmip_skip *)p;
-    skip->type = MIPEXT_PMIPSKIP;
-    skip->subtype = PMIPSKIP_HOMECN;
-    p += sizeof(*skip);
-
-    in_addr_t *homecn = (in_addr_t *)p;
-    int num_addr = load_homecn(homecn, homeif_.name());
-    skip->length  = 1 + 4 * num_addr;
-    p += 4 * num_addr;
+    /* if needed, add homecn extension */
+    if (info.lifetime) {
+      struct pmip_skip *skip = (struct pmip_skip *)p;
+      skip->type = MIPEXT_PMIPSKIP;
+      skip->subtype = PMIPSKIP_HOMECN;
+      p += sizeof(*skip);
+  
+      in_addr_t *homecn = (in_addr_t *)p;
+      int num_addr = load_neigh(homecn, HOMECN_MAX, homeif_.name());
+      skip->length  = 1 + 4 * num_addr;
+      p += 4 * num_addr;
+    }
 
     /* add FA HA auth*/
     struct mip_auth *auth = (struct mip_auth *)p;
@@ -235,10 +206,19 @@ private:
         {
           struct pmip_skip *skip = (struct pmip_skip *)p;
           p += sizeof(*skip);
+          if (skip->subtype != PMIPSKIP_HOMECN) {
+            /* other skippable subtype are skipped */
+            syslog(LOG_WARNING, "skipping proxy mip4 extension %hhd", skip->subtype);
+	  }
+	  else if ((skip->length - 1) % 4 != 0) {
+            syslog(LOG_WARNING, "invalid homecn length %hhd, ignored", skip->length);
+	  }
+	  else {
+	    int num_addr = (skip->length - 1) / 4;
+	    info.num_homecn = num_addr;
+            memcpy(info.homecn, p, num_addr * 4);
+	  }
           p += skip->length - 1;
-  
-          /* all skippable subtype are skipped by HA */
-          syslog(LOG_WARNING, "skipping proxy mip4 extension %hhd\n", skip->subtype);
 	}
         break;
 
@@ -416,10 +396,13 @@ int main(int argc, char** argv)
       if (info.errcode != rfc3344::MIPCODE_ACCEPT)
         continue;
 
-      if (info.lifetime == 0)
+      if (info.lifetime == 0) {
+        bc.store_homecn(info.homecn, info.num_homecn);
         bc.deregister_binding(info.hoa);
-      else
+      }
+      else {
         bc.register_binding(info.hoa, info.ha, info.coa, info.lifetime);
+      }
     }
   }
   catch(exception &e) {

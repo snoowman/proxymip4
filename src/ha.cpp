@@ -92,7 +92,7 @@ private:
      *   nonskip->length  = htons(1);
      * but I decide to use u8 instead, bit me
      */
-    nonskip->length  = 1;
+    nonskip->length  = 2;
 
     p += sizeof(*nonskip);
 
@@ -252,7 +252,7 @@ private:
            *   p += ntohs(nonskip->length) - 1;
            * but I decide to use u8 instead, bit me
            */
-          p += nonskip->length - 1;
+          p += nonskip->length - 2;
   
           if (nonskip->subtype != PMIPNOSK_AUTH) {
             syslog(LOG_WARNING, "unknown non-skippable subtype %hhd\n", nonskip->subtype);

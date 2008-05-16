@@ -1,2 +1,2 @@
 #!/bin/sh
-./run_all.sh arp -n
+./run_all.sh $1 arp -n

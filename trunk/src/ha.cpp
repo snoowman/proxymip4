@@ -28,6 +28,7 @@ struct request_info {
   in_addr_t coa;
   in_addr_t homecn[HOMECN_MAX];
   int       num_homecn;
+  mac_addr  mac;
 };
 
 class ha_socket {
@@ -72,8 +73,10 @@ private:
       skip->subtype = PMIPSKIP_HOMECN;
       p += sizeof(*skip);
   
-      in_addr_t *homecn = (in_addr_t *)p;
-      int num_addr = load_neigh(homecn, HOMECN_MAX, homeif_.name());
+      /* add ha address */
+      memcpy(p, &info.ha, 4);
+      in_addr_t *homecn = (in_addr_t *)(p + 4);
+      int num_addr = 1 + load_neigh(homecn, HOMECN_MAX, homeif_.name(), info.hoa);
       skip->length  = 1 + 4 * num_addr;
       p += 4 * num_addr;
     }
@@ -206,18 +209,34 @@ private:
         {
           struct pmip_skip *skip = (struct pmip_skip *)p;
           p += sizeof(*skip);
-          if (skip->subtype != PMIPSKIP_HOMECN) {
+
+	  if (skip->subtype == PMIPSKIP_DEV) 
+	  {
+	    __u8 *pidtype = (__u8 *)p;
+	    if (*pidtype != PMIPDEV_MAC)
+              syslog(LOG_WARNING, "unknown device id type %hhd, ignored", *pidtype);
+	    else if (skip->length != 8)
+              syslog(LOG_WARNING, "invalid device id length %hhd, ignored", skip->length);
+	    else
+	      memcpy(&info.mac, p + 1, 6);
+	  }
+          else if (skip->subtype == PMIPSKIP_HOMECN) 
+	  {
+            if ((skip->length - 1) % 4 != 0) {
+              syslog(LOG_WARNING, "invalid homecn length %hhd, ignored", skip->length);
+	    }
+	    else {
+	      int num_addr = (skip->length - 1) / 4;
+	      info.num_homecn = num_addr;
+              memcpy(info.homecn, p, num_addr * 4);
+	    }
+	  }
+	  else 
+	  {
             /* other skippable subtype are skipped */
             syslog(LOG_WARNING, "skipping proxy mip4 extension %hhd", skip->subtype);
 	  }
-	  else if ((skip->length - 1) % 4 != 0) {
-            syslog(LOG_WARNING, "invalid homecn length %hhd, ignored", skip->length);
-	  }
-	  else {
-	    int num_addr = (skip->length - 1) / 4;
-	    info.num_homecn = num_addr;
-            memcpy(info.homecn, p, num_addr * 4);
-	  }
+
           p += skip->length - 1;
 	}
         break;
@@ -396,13 +415,9 @@ int main(int argc, char** argv)
       if (info.errcode != rfc3344::MIPCODE_ACCEPT)
         continue;
 
-      if (info.lifetime == 0) {
-        bc.store_homecn(info.homecn, info.num_homecn);
-        bc.deregister_binding(info.hoa);
-      }
-      else {
-        bc.register_binding(info.hoa, info.ha, info.coa, info.lifetime);
-      }
+      bc.store_homecn(info.homecn, info.num_homecn);
+      bc.store_mac(info.hoa, &info.mac);
+      bc.update_binding(info.hoa, info.ha, info.coa, info.lifetime);
     }
   }
   catch(exception &e) {

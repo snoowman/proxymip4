@@ -61,19 +61,6 @@ private:
     req->flag_T = 1; 
     p += sizeof(*req);
 
-    /* if needed, add homecn extension */
-    if (!info.lifetime) {
-      struct pmip_skip *skip = (struct pmip_skip *)p;
-      skip->type = MIPEXT_PMIPSKIP;
-      skip->subtype = PMIPSKIP_HOMECN;
-      p += sizeof(*skip);
-  
-      in_addr_t *homecn = (in_addr_t *)p;
-      int num_addr = load_neigh(homecn, HOMECN_MAX, info.ifname);
-      skip->length  = 1 + 4 * num_addr;
-      p += 4 * num_addr;
-    }
-
     /* add PMIP4 per-node auth extension */
     struct pmip_nonskip *nonskip = (struct pmip_nonskip *)p;
     nonskip->type    = MIPEXT_PMIPNOSK;
@@ -87,6 +74,38 @@ private:
      */
     nonskip->length  = 2;
     p += sizeof(*nonskip);
+
+    /* if needed, add homecn extension */
+    if (!info.lifetime) {
+      struct pmip_skip *skip = (struct pmip_skip *)p;
+      skip->type = MIPEXT_PMIPSKIP;
+      skip->subtype = PMIPSKIP_HOMECN;
+      p += sizeof(*skip);
+
+      /* add ha address */
+      memcpy(p, &info.ha, 4);
+      in_addr_t *homecn = (in_addr_t *)(p + 4);
+      int num_addr = 1 + load_neigh(homecn, HOMECN_MAX, info.ifname, info.hoa);
+      skip->length  = 1 + 4 * num_addr;
+      p += 4 * num_addr;
+    }
+
+    /* or add mobile dev id extension */
+    mac_addr mac;
+    if (get_mac(&mac, info.hoa, info.ifname)){
+      struct pmip_skip *skip =  (struct pmip_skip *)p;
+      skip->type = MIPEXT_PMIPSKIP;
+      skip->subtype = PMIPSKIP_DEV;
+      skip->length  = 8;
+      p += sizeof(*skip);
+
+      __u8 *pidtype = (__u8 *)p;
+      *pidtype = PMIPDEV_MAC;
+      p += 1;
+  
+      memcpy(p, &mac, 6);
+      p += 6;
+    }
 
     /* add FA HA auth*/
     struct mip_auth *auth = (struct mip_auth *)p;
@@ -405,11 +424,7 @@ void pma_daemon()
 	{
           bc.store_mif(info.hoa, info.ifname);
 	  bc.store_homecn(info.homecn, info.num_homecn);
-
-          if (info.lifetime == 0) 
-            bc.deregister_binding(info.hoa);
-          else 
-            bc.register_binding(info.hoa, info.ha, info.coa, info.lifetime);
+          bc.update_binding(info.hoa, info.ha, info.coa, info.lifetime);
         }
 	un.send_code(info.errcode);
       }

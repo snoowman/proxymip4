@@ -1,7 +1,7 @@
 CFLAGS    = -Wall -I../src
 CPPFLAGS  = -Wall -I../src
 LDFLAGS = -lstdc++
-PROGS   = iflog gratarp unarp homecn
+PROGS   = iflog gratarp unarp uparp homecn
 OBJS    = $(PROGS:=.o)
 
 all: $(PROGS)

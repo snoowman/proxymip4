@@ -49,6 +49,9 @@ int const PMIPSKIP_SUBS    = 3;
 int const PMIPAUTH_FAHA    = 1;
 int const PMIPAUTH_IPSEC   = 2;
 
+/* id type for device id extension */
+int const PMIPDEV_MAC = 1;
+
 /* VM home correspondent nodes extension */
 int const PMIPSKIP_HOMECN  = 128;
 int const HOMECN_MAX       = 63; /* (255 - 1) /4 */

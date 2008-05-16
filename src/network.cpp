@@ -62,19 +62,18 @@ int release_tunnel(in_addr_t raddr)
 	return 0;
 }
 
-int register_hoa(in_addr_t hoa, in_addr_t coa, char const *hif)
+int register_hoa(in_addr_t hoa, char const *hif)
 {
 	struct in_addr addr;
 	addr.s_addr = hoa;
 	char mnaddr[20];
 	sprintf(mnaddr, "%s", inet_ntoa(addr));
 
-	my_system("ip route add %s/32 dev %s", mnaddr, tunnel_name(coa));
-	my_system("arp -n -Ds %s %s pub", mnaddr, hif);
+        my_system("arp -n -Ds %s %s pub", mnaddr, hif);
 	return 0;
 }
 
-int deregister_hoa(in_addr_t hoa, in_addr_t coa, char const *hif)
+int deregister_hoa(in_addr_t hoa, char const *hif)
 {
 	struct in_addr addr;
 	addr.s_addr = hoa;
@@ -82,6 +81,27 @@ int deregister_hoa(in_addr_t hoa, in_addr_t coa, char const *hif)
 	sprintf(mnaddr, "%s", inet_ntoa(addr));
 
 	my_system("arp -n -d %s -i %s pub", mnaddr, hif);
+	return 0;
+}	
+
+int register_hoa_route(in_addr_t hoa, in_addr_t coa, char const *hif)
+{
+	struct in_addr addr;
+	addr.s_addr = hoa;
+	char mnaddr[20];
+	sprintf(mnaddr, "%s", inet_ntoa(addr));
+
+	my_system("ip route add %s/32 dev %s", mnaddr, tunnel_name(coa));
+	return 0;
+}
+
+int deregister_hoa_route(in_addr_t hoa, in_addr_t coa, char const *hif)
+{
+	struct in_addr addr;
+	addr.s_addr = hoa;
+	char mnaddr[20];
+	sprintf(mnaddr, "%s", inet_ntoa(addr));
+
 	my_system("ip route del %s/32 dev %s", mnaddr, tunnel_name(coa));
 	return 0;
 }	
@@ -174,7 +194,7 @@ void send_arp(int s, in_addr_t src, in_addr_t dst,
   sendto_ex(s, buf, p-buf, 0, (struct sockaddr*)lldst, sizeof(*lldst));
 }
 
-void send_grat_arp(char const *device, in_addr_t *addr, int num_addr)
+void send_grat_arp(char const *device, in_addr_t *addr, int num_addr, bool use_local)
 {
   sockpp::in_iface ifa(device);
   int ifindex = ifa.index();
@@ -213,19 +233,68 @@ void send_grat_arp(char const *device, in_addr_t *addr, int num_addr)
 
   for (int i = 0; i < 3; ++i) {
     usleep(50000);
-    for (int j = 0; j < num_addr; ++j)
+    for (int j = 0; j < num_addr; ++j) {
+      if (!use_local) {
+        mac_addr mac;
+        if (get_mac(&mac, addr[j], device))
+	  memcpy(llsrc.sll_addr, &mac, llsrc.sll_halen);
+      }
+
       send_arp(s, addr[j], addr[j], &llsrc, &lldst);
+    }
   }
   close_ex(s);
 }
 
+void send_grat_arp2(char const *device, in_addr_t addr, mac_addr* mac)
+{
+  sockpp::in_iface ifa(device);
+  int ifindex = ifa.index();
+  int ifflags = ifa.flags();
+
+  if (!(ifflags & IFF_UP)) {
+    syslog(LOG_WARNING, "Interface \"%s\" is down", device);
+    syslog(LOG_WARNING, "failed sending gratuitous ARP");
+    return;
+  }
+  if (ifflags & (IFF_NOARP|IFF_LOOPBACK)) {
+    syslog(LOG_WARNING, "Interface \"%s\" is not ARPable", device);
+    syslog(LOG_WARNING, "failed sending gratuitous ARP");
+    return;
+  }
+
+  struct sockaddr_ll llsrc, lldst;
+  llsrc.sll_family = AF_PACKET;
+  llsrc.sll_ifindex = ifindex;
+  llsrc.sll_protocol = htons(ETH_P_ARP);
+
+  int s = socket_ex(PF_PACKET, SOCK_DGRAM, 0);
+  bind_ex(s, (struct sockaddr*)&llsrc, sizeof(llsrc));
+
+  socklen_t alen = sizeof(llsrc);
+  getsockname_ex(s, (struct sockaddr*)&llsrc, &alen);
+
+  if (llsrc.sll_halen == 0) {
+    syslog(LOG_WARNING, "Interface \"%s\" is not ARPable (no ll address)", device);
+    syslog(LOG_WARNING, "failed sending gratuitous ARP");
+    return;
+  }
+
+  memcpy(llsrc.sll_addr, mac, llsrc.sll_halen);
+  lldst = llsrc;
+  memset(lldst.sll_addr, -1, lldst.sll_halen);
+  send_arp(s, addr, addr, &llsrc, &lldst);
+
+  close_ex(s);
+}
+
+static char const *PROC_NET_ARP = "/proc/net/arp";
 
 /*
  * load neighbor IP Addresses of an interface
  */
-int load_neigh(in_addr_t *addrs, int max, char const* ifname)
+int load_neigh(in_addr_t *addrs, int max, char const* ifname, in_addr_t exclude)
 {
-  static char const *PROC_NET_ARP = "/proc/net/arp";
   std::ifstream arpf(PROC_NET_ARP);
   std::string line;
 
@@ -241,12 +310,42 @@ int load_neigh(in_addr_t *addrs, int max, char const* ifname)
     std::stringstream ss(line);
     std::string ip, unused, iface;
     ss >> ip >> unused >> unused >> unused >> unused >> iface;
+    in_addr_t addr = sockpp::in_address(ip.c_str()).to_u32();
 
-    if (iface == ifname) {
-      sockpp::in_address addr(ip.c_str());
-      addrs[count++] = addr.to_u32();
+    if (iface == ifname && addr != exclude) {
+      addrs[count++] = addr;
     }
   }
   return count;
+}
+
+/*
+ * get MAC addresses of an neighbor
+ */
+int get_mac(mac_addr *mac, in_addr_t addr, char const* ifname)
+{
+  std::ifstream arpf(PROC_NET_ARP);
+  std::string line;
+  std::string straddr = sockpp::in_address(addr).to_string();
+
+  // ignore first line
+  std::getline(arpf, line);
+
+  while (arpf) {
+    std::getline(arpf, line);
+    if (!line.length())
+      break;
+
+    std::stringstream ss(line);
+    std::string ip, unused, strmac, iface;
+    ss >> ip >> unused >> unused >> strmac >> unused >> iface;
+
+    if (iface == ifname && straddr == ip) {
+      sscanf(strmac.c_str(), "%hhX:%hhX:%hhX:%hhX:%hhX:%hhX:", 
+        mac->b, mac->b + 1, mac->b + 2, mac->b + 3, mac->b + 4, mac->b + 5);
+      return 1;
+    }
+  }
+  return 0;
 }
 
